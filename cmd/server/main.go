@@ -20,6 +20,10 @@ import (
 	"wealthflow/backend/internal/store"
 )
 
+// swapHandler wraps http.Handler so atomic.Value always stores the same concrete type
+// (sync/atomic forbids mixing e.g. http.HandlerFunc with *chi.Mux).
+type swapHandler struct{ http.Handler }
+
 // bootstrapHandler serves /healthz with 200 before Mongo is ready so Fly smoke checks pass.
 // Other paths return 503 until the full router is swapped in.
 func bootstrapHandler(w http.ResponseWriter, r *http.Request) {
@@ -43,12 +47,12 @@ func main() {
 	}
 
 	var handler atomic.Value
-	handler.Store(http.HandlerFunc(bootstrapHandler))
+	handler.Store(swapHandler{http.HandlerFunc(bootstrapHandler)})
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handler.Load().(http.Handler).ServeHTTP(w, r)
+			handler.Load().(swapHandler).ServeHTTP(w, r)
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
@@ -101,7 +105,7 @@ func main() {
 		Snapshot: snapshotSvc,
 		Rates:    ratesSvc,
 	}
-	handler.Store(api.NewRouter(cfg, h))
+	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)
 
 	c := cron.New(cron.WithLocation(time.UTC))
