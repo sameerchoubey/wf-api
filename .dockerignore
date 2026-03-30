@@ -1,0 +1,7 @@
+.git
+.env
+.env.*
+*.md
+fly.toml
+legacy
+**/*_test.go
