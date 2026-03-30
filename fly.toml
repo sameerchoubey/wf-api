@@ -1,55 +1,23 @@
-# =============================================================================
-# Fly.io — WealthFlow backend (Go)
-# =============================================================================
+# fly.toml app configuration file generated for wf-api on 2026-03-30T08:04:02Z
 #
-# App name must match: `fly apps list` and your dashboard app slug.
-# Create once: fly apps create <app-name>
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# GitHub integration (Fly deploy on push):
-#   In Fly dashboard → your app → Settings / Deploy / GitHub:
-#   set the repository ROOT DIRECTORY to:  backend
-#   so builds use this folder as Docker context (go.mod, Dockerfile, ./cmd/server).
-#   If root directory is wrong, you get: "no Go files" or empty context errors.
-#
-# Manual CLI (same as CI should use):
-#   cd backend && fly deploy
-#
-# Secrets (not in git — set once per app):
-#   fly secrets set MONGO_URL="mongodb+srv://..." DB_NAME="wealthflow" JWT_SECRET="..." -a <app>
-#   fly secrets set CORS_ORIGINS="https://your-frontend.com,*" -a <app>
-#
-# Local sanity check:
-#   ./scripts/verify-build.sh
-#
-# =============================================================================
 
-app = "wealthflow"
-primary_region = "iad"
+app = 'wf-api'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
-  [build.args]
-    GO_VERSION = "1.22.12"
-
-[env]
-  PORT = "8080"
-  HTTP_ADDR = ":8080"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
-
-[[http_service.checks]]
-  grace_period = "30s"
-  interval = "20s"
-  method = "GET"
-  timeout = "5s"
-  path = "/healthz"
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-  cpu_kind = "shared"
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 1024
+  memory_mb = 256
