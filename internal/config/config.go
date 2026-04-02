@@ -8,11 +8,12 @@ import (
 
 // Config holds runtime configuration loaded from the environment.
 type Config struct {
-	MongoURL    string
-	DBName      string
-	JWTSecret   string
-	HTTPAddr    string
-	CORSOrigins []string
+	MongoURL          string
+	DBName            string
+	JWTSecret         string
+	HTTPAddr          string
+	CORSOrigins       []string
+	CryptoPriceAPIKey string // FreeCryptoAPI: https://api.freecryptoapi.com/v1/getData (query param "token")
 }
 
 // JWTExpiration matches the Python backend (7 days).
@@ -25,6 +26,7 @@ func Load() Config {
 	mongo := os.Getenv("MONGO_URL")
 	db := os.Getenv("DB_NAME")
 	secret := os.Getenv("JWT_SECRET")
+	cryptoPriceAPIKey := os.Getenv("CRYPTO_PRICE_API_KEY")
 	if secret == "" {
 		secret = "your-secret-key-change-in-production"
 	}
@@ -41,10 +43,11 @@ func Load() Config {
 		origins[i] = strings.TrimSpace(origins[i])
 	}
 	return Config{
-		MongoURL:    mongo,
-		DBName:      db,
-		JWTSecret:   secret,
-		HTTPAddr:    addr,
-		CORSOrigins: origins,
+		MongoURL:          mongo,
+		DBName:            db,
+		JWTSecret:         secret,
+		HTTPAddr:          addr,
+		CORSOrigins:       origins,
+		CryptoPriceAPIKey: cryptoPriceAPIKey,
 	}
 }

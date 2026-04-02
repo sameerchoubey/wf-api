@@ -2,6 +2,27 @@
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
+<<<<<<< Updated upstream
+=======
+# GitHub integration (Fly deploy on push):
+#   In Fly dashboard → your app → Settings / Deploy / GitHub:
+#   set the repository ROOT DIRECTORY to:  backend
+#   so builds use this folder as Docker context (go.mod, Dockerfile, ./cmd/server).
+#   If root directory is wrong, you get: "no Go files" or empty context errors.
+#
+# Manual CLI (same as CI should use):
+#   cd backend && fly deploy
+#
+# Secrets (not in git — set once per app):
+#   fly secrets set MONGO_URL="mongodb+srv://..." DB_NAME="wealthflow" JWT_SECRET="..." -a <app>
+#   fly secrets set CORS_ORIGINS="https://your-frontend.com,*" -a <app>
+#   fly secrets set CRYPTO_PRICE_API_KEY="..." -a <app>   # FreeCryptoAPI token
+#
+# Local sanity check:
+#   ./scripts/verify-build.sh
+#
+# =============================================================================
+>>>>>>> Stashed changes
 
 app = 'wf-api'
 primary_region = 'ams'

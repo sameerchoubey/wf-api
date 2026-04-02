@@ -98,6 +98,17 @@ func main() {
 		Client: &http.Client{Timeout: 15 * time.Second},
 		Log:    log,
 	}
+	cryptoSvc := &service.CryptoPrices{
+		APIKey: cfg.CryptoPriceAPIKey,
+		Store:  st,
+		Client: &http.Client{Timeout: 30 * time.Second},
+		Log:    log,
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		_ = cryptoSvc.Refresh(ctx)
+	}()
 
 	h := &api.Handler{
 		Config:   cfg,
@@ -121,6 +132,17 @@ func main() {
 	})
 	if err != nil {
 		log.Error("cron schedule", "err", err)
+		os.Exit(1)
+	}
+	_, err = c.AddFunc("0 * * * *", func() {
+		jobCtx, jobCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer jobCancel()
+		log.Info("scheduled crypto price job started")
+		_ = cryptoSvc.Refresh(jobCtx)
+		log.Info("scheduled crypto price job finished")
+	})
+	if err != nil {
+		log.Error("cron crypto schedule", "err", err)
 		os.Exit(1)
 	}
 	c.Start()

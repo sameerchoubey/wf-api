@@ -344,3 +344,12 @@ func (h *Handler) ExchangeRates(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now().UTC(),
 	})
 }
+
+func (h *Handler) CryptoPrices(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.Store.ListCryptoPrices(r.Context())
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "Could not load crypto prices")
+		return
+	}
+	WriteJSON(w, http.StatusOK, rows)
+}
