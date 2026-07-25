@@ -38,7 +38,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing != nil {
-		WriteError(w, http.StatusBadRequest, "Email already registered")
+		// Deliberately generic: a specific "already registered" message
+		// would confirm which emails have accounts.
+		WriteError(w, http.StatusBadRequest, "Could not create account. Please try signing in instead.")
 		return
 	}
 	hash, err := auth.HashPassword(body.Password)
@@ -68,6 +70,28 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		TokenType:   "bearer",
 		Message:     &msg,
 	})
+}
+
+// AuthLookup powers the one-door auth flow: given an email, it reports
+// whether an account exists so the client can show either the sign-in or
+// the create-password step. It is rate-limited (see router) since it is
+// an intentional, throttled email-existence check.
+func (h *Handler) AuthLookup(w http.ResponseWriter, r *http.Request) {
+	var body models.EmailLookup
+	if err := decodeJSON(r, &body); err != nil {
+		WriteError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	if body.Email == "" {
+		WriteError(w, http.StatusBadRequest, "Email required")
+		return
+	}
+	u, err := h.Store.FindUserByEmail(r.Context(), body.Email)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "Database error")
+		return
+	}
+	WriteJSON(w, http.StatusOK, models.EmailLookupResponse{Exists: u != nil})
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {

@@ -23,6 +23,14 @@ type UserLogin struct {
 	Password string `json:"password"`
 }
 
+type EmailLookup struct {
+	Email string `json:"email"`
+}
+
+type EmailLookupResponse struct {
+	Exists bool `json:"exists"`
+}
+
 type TokenResponse struct {
 	AccessToken string  `json:"access_token"`
 	TokenType   string  `json:"token_type"`

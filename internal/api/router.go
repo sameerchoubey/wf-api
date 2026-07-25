@@ -36,8 +36,14 @@ func NewRouter(cfg config.Config, h *Handler) http.Handler {
 	r.Get("/api/crypto-prices", h.CryptoPrices)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Post("/register", h.Register)
-		r.Post("/login", h.Login)
+		// Auth endpoints share a per-IP rate limit to blunt credential
+		// stuffing and email enumeration.
+		r.Group(func(r chi.Router) {
+			r.Use(appmw.RateLimit(15, time.Minute))
+			r.Post("/register", h.Register)
+			r.Post("/login", h.Login)
+			r.Post("/auth/lookup", h.AuthLookup)
+		})
 		r.Get("/exchange-rates", h.ExchangeRates)
 
 		r.Group(func(r chi.Router) {
