@@ -48,6 +48,9 @@ func assetUpdateBSON(in models.AssetUpdate) bson.M {
 	if in.TotalValueINR != nil {
 		m["total_value_inr"] = *in.TotalValueINR
 	}
+	if in.CryptoHoldings != nil {
+		m["crypto_holdings"] = in.CryptoHoldings
+	}
 	return m
 }
 

@@ -102,6 +102,7 @@ func main() {
 		APIKey: cfg.CryptoPriceAPIKey,
 		Store:  st,
 		Client: &http.Client{Timeout: 30 * time.Second},
+		Rates:  ratesSvc,
 		Log:    log,
 	}
 	go func() {
@@ -115,6 +116,7 @@ func main() {
 		Store:    st,
 		Snapshot: snapshotSvc,
 		Rates:    ratesSvc,
+		Crypto:   cryptoSvc,
 	}
 	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)

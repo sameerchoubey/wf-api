@@ -50,7 +50,18 @@ type Asset struct {
 	TravelPointsPrograms interface{} `bson:"travel_points_programs,omitempty" json:"travel_points_programs,omitempty"`
 	TotalValueUSD        *float64    `bson:"total_value_usd,omitempty" json:"total_value_usd,omitempty"`
 	TotalValueINR        *float64    `bson:"total_value_inr,omitempty" json:"total_value_inr,omitempty"`
-	UpdatedAt            string      `bson:"updated_at" json:"updated_at"`
+	// Crypto portfolio (asset_type == "crypto"): one asset holds many
+	// coins; the server prices Σ units × cached market price and
+	// clients never send a value.
+	CryptoHoldings []CryptoHolding `bson:"crypto_holdings,omitempty" json:"crypto_holdings,omitempty"`
+	UpdatedAt      string          `bson:"updated_at" json:"updated_at"`
+}
+
+// CryptoHolding is one coin inside a crypto portfolio asset.
+type CryptoHolding struct {
+	Symbol      string   `bson:"symbol" json:"symbol"`
+	Units       float64  `bson:"units" json:"units"`
+	BuyPriceUSD *float64 `bson:"buy_price_usd,omitempty" json:"buy_price_usd,omitempty"`
 }
 
 type AssetCreate struct {
@@ -64,6 +75,7 @@ type AssetCreate struct {
 	TravelPointsPrograms interface{} `json:"travel_points_programs"`
 	TotalValueUSD        *float64    `json:"total_value_usd"`
 	TotalValueINR        *float64    `json:"total_value_inr"`
+	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 }
 
 type AssetUpdate struct {
@@ -77,6 +89,7 @@ type AssetUpdate struct {
 	TravelPointsPrograms interface{} `json:"travel_points_programs"`
 	TotalValueUSD        *float64    `json:"total_value_usd"`
 	TotalValueINR        *float64    `json:"total_value_inr"`
+	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 }
 
 type Liability struct {

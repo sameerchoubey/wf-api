@@ -70,3 +70,49 @@ func (s *Store) DistinctAssetUserIDs(ctx context.Context) ([]string, error) {
 	}
 	return out, nil
 }
+
+// ListCryptoAssets returns every units-based crypto asset across all users,
+// used by the hourly revaluation pass.
+func (s *Store) ListCryptoAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "crypto"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// DistinctCryptoSymbols lists the coin symbols currently held by any user,
+// so the price refresh covers everything in portfolios.
+func (s *Store) DistinctCryptoSymbols(ctx context.Context) ([]string, error) {
+	vals, err := s.db.Collection("assets").Distinct(ctx, "crypto_holdings.symbol", bson.M{"asset_type": "crypto"})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if s, ok := v.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// SetAssetValuation updates just the computed value fields of an asset
+// (used by revaluation; deliberately leaves updated_at alone so it still
+// reflects the user's last edit).
+func (s *Store) SetAssetValuation(ctx context.Context, assetID string, valueINR, valueUSD float64) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value":   valueINR,
+		"total_value_usd": valueUSD,
+	}})
+	return err
+}

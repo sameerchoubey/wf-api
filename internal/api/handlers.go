@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -19,6 +21,24 @@ type Handler struct {
 	Store    *store.Store
 	Snapshot *service.Snapshot
 	Rates    *service.Rates
+	Crypto   *service.CryptoPrices
+}
+
+// priceCryptoAsset validates a crypto portfolio's holdings and fills in the
+// server-computed value fields. Client-sent values are ignored for crypto —
+// the market price is the only source of truth.
+func (h *Handler) priceCryptoAsset(ctx context.Context, a *models.Asset) error {
+	if len(a.CryptoHoldings) == 0 {
+		return fmt.Errorf("add at least one coin")
+	}
+	usd, inr, normalized, err := h.Crypto.ValuePortfolio(ctx, a.CryptoHoldings)
+	if err != nil {
+		return err
+	}
+	a.CryptoHoldings = normalized
+	a.CurrentValue = inr
+	a.TotalValueUSD = &usd
+	return nil
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -154,9 +174,16 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		TravelPointsPrograms: in.TravelPointsPrograms,
 		TotalValueUSD:        in.TotalValueUSD,
 		TotalValueINR:        in.TotalValueINR,
+		CryptoHoldings:       in.CryptoHoldings,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
+	if a.AssetType != nil && *a.AssetType == "crypto" {
+		if err := h.priceCryptoAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	if err := h.Store.InsertAsset(r.Context(), &a); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not create asset")
 		return
@@ -183,6 +210,26 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	update := assetUpdateBSON(in)
+	// If the asset is (or becomes) a units-based crypto holding, reprice it
+	// server-side from the merged symbol/units instead of trusting the client.
+	effType := existing.AssetType
+	if in.AssetType != nil {
+		effType = in.AssetType
+	}
+	if effType != nil && *effType == "crypto" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.CryptoHoldings != nil {
+			merged.CryptoHoldings = in.CryptoHoldings
+		}
+		if err := h.priceCryptoAsset(r.Context(), &merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["crypto_holdings"] = merged.CryptoHoldings
+		update["current_value"] = merged.CurrentValue
+		update["total_value_usd"] = *merged.TotalValueUSD
+	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")

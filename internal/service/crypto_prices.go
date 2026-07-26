@@ -26,10 +26,12 @@ type CryptoPrices struct {
 	APIKey string
 	Store  *store.Store
 	Client *http.Client
+	Rates  *Rates
 	Log    *slog.Logger
 }
 
-// Refresh fetches live data for each default symbol and upserts MongoDB.
+// Refresh fetches live prices for the default symbols plus every coin held
+// in a portfolio, then revalues units-based crypto assets against them.
 func (c *CryptoPrices) Refresh(ctx context.Context) error {
 	if c.APIKey == "" {
 		if c.Log != nil {
@@ -41,7 +43,7 @@ func (c *CryptoPrices) Refresh(ctx context.Context) error {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	for _, sym := range DefaultCryptoSymbols {
+	for _, sym := range c.symbolsToRefresh(ctx) {
 		payload, err := c.fetchSymbol(ctx, client, sym)
 		if err != nil {
 			if c.Log != nil {
@@ -60,7 +62,38 @@ func (c *CryptoPrices) Refresh(ctx context.Context) error {
 			c.Log.Info("crypto price saved", "symbol", sym)
 		}
 	}
+	// Fresh prices in hand: bring every units-based holding up to date.
+	if err := c.RevalueHoldings(ctx); err != nil && c.Log != nil {
+		c.Log.Error("crypto revaluation failed", "err", err)
+	}
 	return nil
+}
+
+// symbolsToRefresh is DefaultCryptoSymbols ∪ symbols held by any user.
+func (c *CryptoPrices) symbolsToRefresh(ctx context.Context) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(sym string) {
+		sym = NormalizeSymbol(sym)
+		if sym != "" && !seen[sym] {
+			seen[sym] = true
+			out = append(out, sym)
+		}
+	}
+	for _, s := range DefaultCryptoSymbols {
+		add(s)
+	}
+	held, err := c.Store.DistinctCryptoSymbols(ctx)
+	if err != nil {
+		if c.Log != nil {
+			c.Log.Error("listing held crypto symbols failed", "err", err)
+		}
+		return out
+	}
+	for _, s := range held {
+		add(s)
+	}
+	return out
 }
 
 func (c *CryptoPrices) fetchSymbol(ctx context.Context, client *http.Client, symbol string) (bson.M, error) {
