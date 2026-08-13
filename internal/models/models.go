@@ -54,7 +54,10 @@ type Asset struct {
 	// coins; the server prices Σ units × cached market price and
 	// clients never send a value.
 	CryptoHoldings []CryptoHolding `bson:"crypto_holdings,omitempty" json:"crypto_holdings,omitempty"`
-	UpdatedAt      string          `bson:"updated_at" json:"updated_at"`
+	// Mutual-fund portfolio (asset_type == "mutual_fund"): one asset
+	// holds many schemes; the server prices Σ units × latest NAV.
+	MFHoldings []MFHolding `bson:"mf_holdings,omitempty" json:"mf_holdings,omitempty"`
+	UpdatedAt  string      `bson:"updated_at" json:"updated_at"`
 }
 
 // CryptoHolding is one coin inside a crypto portfolio asset.
@@ -62,6 +65,24 @@ type CryptoHolding struct {
 	Symbol      string   `bson:"symbol" json:"symbol"`
 	Units       float64  `bson:"units" json:"units"`
 	BuyPriceUSD *float64 `bson:"buy_price_usd,omitempty" json:"buy_price_usd,omitempty"`
+}
+
+// MFHolding is one scheme inside a mutual-fund portfolio asset.
+// SchemeName, LastNAV and NAVDate are server-maintained from the NAV
+// feed; AvgNAV is the user's average buy NAV (enables gain display).
+type MFHolding struct {
+	SchemeCode string   `bson:"scheme_code" json:"scheme_code"`
+	SchemeName string   `bson:"scheme_name" json:"scheme_name"`
+	Units      float64  `bson:"units" json:"units"`
+	AvgNAV     *float64 `bson:"avg_nav,omitempty" json:"avg_nav,omitempty"`
+	LastNAV    float64  `bson:"last_nav,omitempty" json:"last_nav,omitempty"`
+	NAVDate    string   `bson:"nav_date,omitempty" json:"nav_date,omitempty"`
+}
+
+// MFSearchResult is one row returned by the fund-search proxy.
+type MFSearchResult struct {
+	SchemeCode int    `json:"schemeCode"`
+	SchemeName string `json:"schemeName"`
 }
 
 type AssetCreate struct {
@@ -76,6 +97,7 @@ type AssetCreate struct {
 	TotalValueUSD        *float64    `json:"total_value_usd"`
 	TotalValueINR        *float64    `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
+	MFHoldings           []MFHolding     `json:"mf_holdings"`
 }
 
 type AssetUpdate struct {
@@ -90,6 +112,7 @@ type AssetUpdate struct {
 	TotalValueUSD        *float64    `json:"total_value_usd"`
 	TotalValueINR        *float64    `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
+	MFHoldings           []MFHolding     `json:"mf_holdings"`
 }
 
 type Liability struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,56 @@ type Handler struct {
 	Snapshot *service.Snapshot
 	Rates    *service.Rates
 	Crypto   *service.CryptoPrices
+	MF       *service.MFNavs
+}
+
+// MFSearch proxies mutual-fund scheme search for the holdings editor.
+func (h *Handler) MFSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) < 3 {
+		WriteJSON(w, http.StatusOK, []models.MFSearchResult{})
+		return
+	}
+	results, err := h.MF.Search(r.Context(), q)
+	if err != nil {
+		WriteError(w, http.StatusBadGateway, "Fund search is unavailable right now")
+		return
+	}
+	if results == nil {
+		results = []models.MFSearchResult{}
+	}
+	WriteJSON(w, http.StatusOK, results)
+}
+
+// MFNav returns one scheme's latest NAV (cached, fetched on demand) so
+// the holdings editor can preview values before saving.
+func (h *Handler) MFNav(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		WriteError(w, http.StatusBadRequest, "code required")
+		return
+	}
+	doc, err := h.MF.NavFor(r.Context(), code)
+	if err != nil {
+		WriteError(w, http.StatusBadGateway, "Could not fetch NAV for this fund")
+		return
+	}
+	WriteJSON(w, http.StatusOK, doc)
+}
+
+// priceMFAsset validates a mutual-fund portfolio and fills in the
+// server-computed value; client-sent values are ignored.
+func (h *Handler) priceMFAsset(ctx context.Context, a *models.Asset) error {
+	if len(a.MFHoldings) == 0 {
+		return fmt.Errorf("add at least one fund")
+	}
+	inr, normalized, err := h.MF.ValuePortfolio(ctx, a.MFHoldings)
+	if err != nil {
+		return err
+	}
+	a.MFHoldings = normalized
+	a.CurrentValue = inr
+	return nil
 }
 
 // priceCryptoAsset validates a crypto portfolio's holdings and fills in the
@@ -175,11 +226,18 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		TotalValueUSD:        in.TotalValueUSD,
 		TotalValueINR:        in.TotalValueINR,
 		CryptoHoldings:       in.CryptoHoldings,
+		MFHoldings:           in.MFHoldings,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
 	if a.AssetType != nil && *a.AssetType == "crypto" {
 		if err := h.priceCryptoAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "mutual_fund" {
+		if err := h.priceMFAsset(r.Context(), &a); err != nil {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -229,6 +287,19 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		update["crypto_holdings"] = merged.CryptoHoldings
 		update["current_value"] = merged.CurrentValue
 		update["total_value_usd"] = *merged.TotalValueUSD
+	}
+	if effType != nil && *effType == "mutual_fund" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.MFHoldings != nil {
+			merged.MFHoldings = in.MFHoldings
+		}
+		if err := h.priceMFAsset(r.Context(), &merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["mf_holdings"] = merged.MFHoldings
+		update["current_value"] = merged.CurrentValue
 	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {

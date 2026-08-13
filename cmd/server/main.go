@@ -105,10 +105,16 @@ func main() {
 		Rates:  ratesSvc,
 		Log:    log,
 	}
+	mfSvc := &service.MFNavs{
+		Store:  st,
+		Client: &http.Client{Timeout: 30 * time.Second},
+		Log:    log,
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		_ = cryptoSvc.Refresh(ctx)
+		_ = mfSvc.Refresh(ctx)
 	}()
 
 	h := &api.Handler{
@@ -117,6 +123,7 @@ func main() {
 		Snapshot: snapshotSvc,
 		Rates:    ratesSvc,
 		Crypto:   cryptoSvc,
+		MF:       mfSvc,
 	}
 	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)
@@ -145,6 +152,18 @@ func main() {
 	})
 	if err != nil {
 		log.Error("cron crypto schedule", "err", err)
+		os.Exit(1)
+	}
+	// 18:30 UTC = midnight IST: AMFI publishes the day's NAVs by ~23:00 IST.
+	_, err = c.AddFunc("30 18 * * *", func() {
+		jobCtx, jobCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer jobCancel()
+		log.Info("scheduled mf nav job started")
+		_ = mfSvc.Refresh(jobCtx)
+		log.Info("scheduled mf nav job finished")
+	})
+	if err != nil {
+		log.Error("cron mf nav schedule", "err", err)
 		os.Exit(1)
 	}
 	c.Start()

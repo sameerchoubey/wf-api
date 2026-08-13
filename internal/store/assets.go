@@ -116,3 +116,49 @@ func (s *Store) SetAssetValuation(ctx context.Context, assetID string, valueINR,
 	}})
 	return err
 }
+
+// ListMFAssets returns every mutual-fund portfolio across all users,
+// used by the daily NAV revaluation pass.
+func (s *Store) ListMFAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "mutual_fund"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// DistinctMFSchemeCodes lists the scheme codes currently held by any user,
+// so the daily NAV refresh covers everything in portfolios.
+func (s *Store) DistinctMFSchemeCodes(ctx context.Context) ([]string, error) {
+	vals, err := s.db.Collection("assets").Distinct(ctx, "mf_holdings.scheme_code", bson.M{"asset_type": "mutual_fund"})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if s, ok := v.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// SetAssetMFValuation updates an MF portfolio's computed value and its
+// holdings (whose last_nav/nav_date the revaluer refreshes); updated_at
+// is left alone so it still reflects the user's last edit.
+func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueINR float64, holdings []models.MFHolding) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value": valueINR,
+		"mf_holdings":   holdings,
+	}})
+	return err
+}
