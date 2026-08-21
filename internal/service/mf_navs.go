@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"wealthflow/backend/internal/models"
@@ -26,6 +27,21 @@ type MFNavs struct {
 	Store  *store.Store
 	Client *http.Client
 	Log    *slog.Logger
+
+	// Serializes refreshes (cron, boot, on-read) and guards lastAttempt.
+	refreshMu   sync.Mutex
+	lastAttempt time.Time
+}
+
+// RefreshIfStale refreshes only when the last attempt is older than maxAge
+// (NAVs change once per business day, so callers pass a generous window).
+func (m *MFNavs) RefreshIfStale(ctx context.Context, maxAge time.Duration) {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	if time.Since(m.lastAttempt) < maxAge {
+		return
+	}
+	_ = m.refreshLocked(ctx)
 }
 
 func (m *MFNavs) client() *http.Client {
@@ -152,6 +168,13 @@ func (m *MFNavs) ValuePortfolio(ctx context.Context, holdings []models.MFHolding
 // revalues all MF portfolios. Runs at boot and on the daily cron (NAVs
 // publish once per business day).
 func (m *MFNavs) Refresh(ctx context.Context) error {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	return m.refreshLocked(ctx)
+}
+
+func (m *MFNavs) refreshLocked(ctx context.Context) error {
+	m.lastAttempt = time.Now()
 	codes, err := m.Store.DistinctMFSchemeCodes(ctx)
 	if err != nil {
 		return err

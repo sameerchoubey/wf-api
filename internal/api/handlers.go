@@ -437,6 +437,17 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	// Refresh-on-read: the Fly machine sleeps when idle, so crons alone
+	// can't keep prices current. Reading the dashboard refreshes market
+	// data when it's stale — at most once per window, so browsing never
+	// hammers the external APIs. Synchronous (bounded by the timeout) so
+	// this very response reflects the fresh values; on timeout the stale
+	// cache is served instead.
+	refreshCtx, cancelRefresh := context.WithTimeout(r.Context(), 10*time.Second)
+	h.Crypto.RefreshIfStale(refreshCtx, time.Hour)
+	h.MF.RefreshIfStale(refreshCtx, 12*time.Hour)
+	cancelRefresh()
+
 	uid := middleware.UserID(r.Context())
 	assets, err := h.Store.ListAssetsByUser(r.Context(), uid)
 	if err != nil {

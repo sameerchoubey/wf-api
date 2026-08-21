@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -28,11 +29,36 @@ type CryptoPrices struct {
 	Client *http.Client
 	Rates  *Rates
 	Log    *slog.Logger
+
+	// Serializes refreshes (cron, boot, on-read) and guards lastAttempt.
+	refreshMu   sync.Mutex
+	lastAttempt time.Time
 }
 
 // Refresh fetches live prices for the default symbols plus every coin held
 // in a portfolio, then revalues units-based crypto assets against them.
 func (c *CryptoPrices) Refresh(ctx context.Context) error {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	return c.refreshLocked(ctx)
+}
+
+// RefreshIfStale refreshes only when the last attempt is older than maxAge,
+// so read-triggered refreshes never hammer the price API. Attempt time (not
+// success time) gates retries, so a dead API is retried at most once per
+// window too. Concurrent callers serialize on the mutex; the ones that
+// arrive during a refresh return once it completes and find fresh data.
+func (c *CryptoPrices) RefreshIfStale(ctx context.Context, maxAge time.Duration) {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	if time.Since(c.lastAttempt) < maxAge {
+		return
+	}
+	_ = c.refreshLocked(ctx)
+}
+
+func (c *CryptoPrices) refreshLocked(ctx context.Context) error {
+	c.lastAttempt = time.Now()
 	if c.APIKey == "" {
 		if c.Log != nil {
 			c.Log.Warn("CRYPTO_PRICE_API_KEY not set; skipping crypto price refresh")
