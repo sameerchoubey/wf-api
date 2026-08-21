@@ -24,11 +24,12 @@ const freeCryptoGetData = "https://api.freecryptoapi.com/v1/getData"
 var DefaultCryptoSymbols = []string{"BTC", "ETH"}
 
 type CryptoPrices struct {
-	APIKey string
-	Store  *store.Store
-	Client *http.Client
-	Rates  *Rates
-	Log    *slog.Logger
+	APIKey   string
+	Store    *store.Store
+	Client   *http.Client
+	Rates    *Rates
+	Snapshot *Snapshot
+	Log      *slog.Logger
 
 	// Serializes refreshes (cron, boot, on-read) and guards lastAttempt.
 	refreshMu   sync.Mutex

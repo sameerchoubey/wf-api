@@ -99,16 +99,18 @@ func main() {
 		Log:    log,
 	}
 	cryptoSvc := &service.CryptoPrices{
-		APIKey: cfg.CryptoPriceAPIKey,
-		Store:  st,
-		Client: &http.Client{Timeout: 30 * time.Second},
-		Rates:  ratesSvc,
-		Log:    log,
+		APIKey:   cfg.CryptoPriceAPIKey,
+		Store:    st,
+		Client:   &http.Client{Timeout: 30 * time.Second},
+		Rates:    ratesSvc,
+		Snapshot: snapshotSvc,
+		Log:      log,
 	}
 	mfSvc := &service.MFNavs{
-		Store:  st,
-		Client: &http.Client{Timeout: 30 * time.Second},
-		Log:    log,
+		Store:    st,
+		Client:   &http.Client{Timeout: 30 * time.Second},
+		Snapshot: snapshotSvc,
+		Log:      log,
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)

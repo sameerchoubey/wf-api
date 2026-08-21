@@ -24,9 +24,10 @@ const mfAPIBase = "https://api.mfapi.in/mf"
 const mfSearchLimit = 20
 
 type MFNavs struct {
-	Store  *store.Store
-	Client *http.Client
-	Log    *slog.Logger
+	Store    *store.Store
+	Client   *http.Client
+	Snapshot *Snapshot
+	Log      *slog.Logger
 
 	// Serializes refreshes (cron, boot, on-read) and guards lastAttempt.
 	refreshMu   sync.Mutex
@@ -206,6 +207,7 @@ func (m *MFNavs) Revalue(ctx context.Context) error {
 		return err
 	}
 	revalued := 0
+	affected := map[string]bool{}
 	for _, a := range assets {
 		if len(a.MFHoldings) == 0 {
 			continue
@@ -235,9 +237,21 @@ func (m *MFNavs) Revalue(ctx context.Context) error {
 			continue
 		}
 		revalued++
+		if a.UserID != nil {
+			affected[*a.UserID] = true
+		}
 	}
 	if revalued > 0 && m.Log != nil {
 		m.Log.Info("mf portfolios revalued", "count", revalued)
+	}
+	// The history chart reads snapshots, not live asset values — refresh
+	// today's snapshot for every user whose portfolio value just moved.
+	if m.Snapshot != nil {
+		for uid := range affected {
+			if err := m.Snapshot.CreateDailySnapshot(ctx, uid); err != nil && m.Log != nil {
+				m.Log.Error("post-revalue snapshot failed", "user", uid, "err", err)
+			}
+		}
 	}
 	return nil
 }

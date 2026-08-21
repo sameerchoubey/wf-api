@@ -88,6 +88,7 @@ func (c *CryptoPrices) RevalueHoldings(ctx context.Context) error {
 	}
 	rate := c.usdToINR(ctx)
 	revalued := 0
+	affected := map[string]bool{}
 	for _, a := range assets {
 		if len(a.CryptoHoldings) == 0 {
 			continue
@@ -105,9 +106,21 @@ func (c *CryptoPrices) RevalueHoldings(ctx context.Context) error {
 			continue
 		}
 		revalued++
+		if a.UserID != nil {
+			affected[*a.UserID] = true
+		}
 	}
 	if c.Log != nil && revalued > 0 {
 		c.Log.Info("crypto portfolios revalued", "count", revalued)
+	}
+	// The history chart reads snapshots, not live asset values — refresh
+	// today's snapshot for every user whose portfolio value just moved.
+	if c.Snapshot != nil {
+		for uid := range affected {
+			if err := c.Snapshot.CreateDailySnapshot(ctx, uid); err != nil && c.Log != nil {
+				c.Log.Error("post-revalue snapshot failed", "user", uid, "err", err)
+			}
+		}
 	}
 	return nil
 }
