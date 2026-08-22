@@ -14,6 +14,7 @@ type Config struct {
 	HTTPAddr          string
 	CORSOrigins       []string
 	CryptoPriceAPIKey string // FreeCryptoAPI: https://api.freecryptoapi.com/v1/getData (query param "token")
+	JobToken          string // shared secret for POST /api/internal/daily; endpoint is disabled when empty
 }
 
 // JWTExpiration matches the Python backend (7 days).
@@ -49,5 +50,6 @@ func Load() Config {
 		HTTPAddr:          addr,
 		CORSOrigins:       origins,
 		CryptoPriceAPIKey: cryptoPriceAPIKey,
+		JobToken:          os.Getenv("JOB_TOKEN"),
 	}
 }

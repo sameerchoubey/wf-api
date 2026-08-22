@@ -43,6 +43,9 @@ func NewRouter(cfg config.Config, h *Handler) http.Handler {
 			r.Post("/register", h.Register)
 			r.Post("/login", h.Login)
 			r.Post("/auth/lookup", h.AuthLookup)
+			// Token-gated scheduler hook (see Handler.RunDailyJobs); the
+			// rate limit caps brute-force attempts on the token.
+			r.Post("/internal/daily", h.RunDailyJobs)
 		})
 		r.Get("/exchange-rates", h.ExchangeRates)
 

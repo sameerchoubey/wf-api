@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -24,6 +25,38 @@ type Handler struct {
 	Rates    *service.Rates
 	Crypto   *service.CryptoPrices
 	MF       *service.MFNavs
+}
+
+// RunDailyJobs is the wake-and-work endpoint for the external scheduler:
+// the Fly machine sleeps through the in-process crons, so a GitHub Actions
+// cron POSTs here nightly and the work happens inside this request —
+// prices/NAVs refresh (which revalues portfolios), then a snapshot is
+// written for every user. Guarded by a shared token; disabled when unset.
+func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
+	if h.Config.JobToken == "" {
+		WriteError(w, http.StatusNotFound, "Not found")
+		return
+	}
+	token := r.Header.Get("X-Job-Token")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(h.Config.JobToken)) != 1 {
+		WriteError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+	ctx := r.Context()
+	// Fresh market data first so the snapshots capture today's values.
+	if err := h.Crypto.Refresh(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "crypto refresh failed")
+		return
+	}
+	if err := h.MF.Refresh(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "mf refresh failed")
+		return
+	}
+	if err := h.Snapshot.CreateSnapshotsForAllUsers(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "snapshots failed")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // MFSearch proxies mutual-fund scheme search for the holdings editor.

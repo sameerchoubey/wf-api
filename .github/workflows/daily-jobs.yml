@@ -1,0 +1,21 @@
+# Nightly wake-and-work call: the Fly machine auto-stops when idle, so its
+# in-process crons rarely fire. This hits the token-gated job endpoint —
+# the request wakes the machine and the snapshot/refresh work runs inside
+# the request itself, so scheduler jitter doesn't matter.
+# Requires the JOB_TOKEN repo secret (same value as the Fly JOB_TOKEN secret).
+name: Daily snapshot job
+
+on:
+  schedule:
+    - cron: "35 18 * * *" # 00:05 IST — after AMFI publishes the day's NAVs
+  workflow_dispatch: {} # allow manual runs for testing
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily jobs on wf-api
+        run: |
+          curl --fail-with-body -sS -X POST "https://wf-api.fly.dev/api/internal/daily" \
+            -H "X-Job-Token: ${{ secrets.JOB_TOKEN }}" \
+            --max-time 180 --retry 3 --retry-delay 30 --retry-all-errors
