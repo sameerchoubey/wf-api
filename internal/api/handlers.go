@@ -45,6 +45,11 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	// Fresh market data first so the snapshots capture today's values.
+	// FX comes first: the crypto and FX revaluations convert with it.
+	if err := h.Rates.Refresh(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "fx rates refresh failed")
+		return
+	}
 	if err := h.Crypto.Refresh(ctx); err != nil {
 		WriteError(w, http.StatusInternalServerError, "crypto refresh failed")
 		return

@@ -40,16 +40,30 @@ func (r *Rates) Get(ctx context.Context) (map[string]float64, error) {
 		if r.Log != nil {
 			r.Log.Error("failed to fetch exchange rates", "err", err)
 		}
+		// Serve the stale cache rather than fabricated rates; with no
+		// cache at all, fail loudly instead of inventing numbers.
 		if len(rates) > 0 {
 			return rates, nil
 		}
-		return map[string]float64{"USD": 83, "EUR": 90}, nil
+		return nil, fmt.Errorf("fx rates unavailable: %w", err)
 	}
 	now := time.Now().UTC()
 	if err := r.Store.UpsertExchangeRatesCache(ctx, fetched, now); err != nil {
 		return nil, err
 	}
 	return fetched, nil
+}
+
+// Refresh force-fetches the latest rates and caches them regardless of
+// cache age — the nightly job calls this first (same pattern as crypto
+// prices and MF NAVs) so a dead FX feed turns the scheduled run red
+// instead of silently reusing yesterday's conversion.
+func (r *Rates) Refresh(ctx context.Context) error {
+	fetched, err := r.fetchFromAPI(ctx)
+	if err != nil {
+		return fmt.Errorf("fx refresh: %w", err)
+	}
+	return r.Store.UpsertExchangeRatesCache(ctx, fetched, time.Now().UTC())
 }
 
 func (r *Rates) fetchFromAPI(ctx context.Context) (map[string]float64, error) {
