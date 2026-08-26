@@ -49,6 +49,14 @@ func toBSONSliceLiabilities(liabs []models.Liability) ([]interface{}, error) {
 	return out, nil
 }
 
+// snapshotDate buckets a moment into a snapshot day. Storage stays UTC;
+// only the day label's boundary is shifted to 00:30 UTC (= 06:00 IST), so
+// the post-midnight-IST nightly job and any pre-dawn visits stamp the day
+// they conceptually close out instead of splitting it.
+func snapshotDate(now time.Time) string {
+	return now.UTC().Add(-30 * time.Minute).Format("2006-01-02")
+}
+
 // CreateDailySnapshot creates or updates today's snapshot for a user.
 func (s *Snapshot) CreateDailySnapshot(ctx context.Context, userID string) error {
 	assets, err := s.Store.ListAssetsByUser(ctx, userID)
@@ -78,8 +86,8 @@ func (s *Snapshot) CreateDailySnapshot(ctx context.Context, userID string) error
 	}
 	netWorth := totalAssets - totalLiab
 
-	today := time.Now().UTC().Format("2006-01-02")
 	now := time.Now().UTC()
+	today := snapshotDate(now)
 
 	assetBSON, err := toBSONSliceAssets(assets)
 	if err != nil {
