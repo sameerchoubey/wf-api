@@ -112,6 +112,12 @@ func main() {
 		Snapshot: snapshotSvc,
 		Log:      log,
 	}
+	fxSvc := &service.FXRevaluer{
+		Store:    st,
+		Rates:    ratesSvc,
+		Snapshot: snapshotSvc,
+		Log:      log,
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -126,6 +132,7 @@ func main() {
 		Rates:    ratesSvc,
 		Crypto:   cryptoSvc,
 		MF:       mfSvc,
+		FX:       fxSvc,
 	}
 	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)

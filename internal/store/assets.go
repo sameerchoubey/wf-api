@@ -162,3 +162,65 @@ func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueIN
 	}})
 	return err
 }
+
+// ListForeignAssets returns plain foreign-currency assets across all users
+// for FX revaluation. Units-based portfolios (crypto, mutual funds) are
+// excluded — they are revalued by their own passes and may carry stale
+// is_foreign leftovers from before they were converted to units tracking.
+func (s *Store) ListForeignAssets(ctx context.Context) ([]models.Asset, error) {
+	filter := bson.M{
+		"is_foreign": true,
+		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points"}},
+	}
+	cur, err := s.db.Collection("assets").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// ListTravelPointAssets returns every travel-points asset across all users.
+func (s *Store) ListTravelPointAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "travel_points"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// SetAssetCurrentValue updates only an asset's INR value (FX revaluation
+// of plain foreign assets); updated_at is left as the user's last edit.
+func (s *Store) SetAssetCurrentValue(ctx context.Context, assetID string, valueINR float64) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value": valueINR,
+	}})
+	return err
+}
+
+// SetAssetTravelValuation updates a travel-points asset's INR value fields
+// (the USD total stays; only the conversion moves with the rate).
+func (s *Store) SetAssetTravelValuation(ctx context.Context, assetID string, valueINR float64) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value":   valueINR,
+		"total_value_inr": valueINR,
+	}})
+	return err
+}

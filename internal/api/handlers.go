@@ -25,6 +25,7 @@ type Handler struct {
 	Rates    *service.Rates
 	Crypto   *service.CryptoPrices
 	MF       *service.MFNavs
+	FX       *service.FXRevaluer
 }
 
 // RunDailyJobs is the wake-and-work endpoint for the external scheduler:
@@ -50,6 +51,10 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.MF.Refresh(ctx); err != nil {
 		WriteError(w, http.StatusInternalServerError, "mf refresh failed")
+		return
+	}
+	if err := h.FX.Revalue(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "fx revaluation failed")
 		return
 	}
 	if err := h.Snapshot.CreateSnapshotsForAllUsers(ctx); err != nil {
@@ -479,6 +484,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	refreshCtx, cancelRefresh := context.WithTimeout(r.Context(), 10*time.Second)
 	h.Crypto.RefreshIfStale(refreshCtx, time.Hour)
 	h.MF.RefreshIfStale(refreshCtx, 12*time.Hour)
+	h.FX.RevalueIfStale(refreshCtx, 12*time.Hour)
 	cancelRefresh()
 
 	uid := middleware.UserID(r.Context())
