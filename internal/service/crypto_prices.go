@@ -60,22 +60,28 @@ func (c *CryptoPrices) RefreshIfStale(ctx context.Context, maxAge time.Duration)
 
 func (c *CryptoPrices) refreshLocked(ctx context.Context) error {
 	c.lastAttempt = time.Now()
+	// A refresh that can't fetch anything must be an ERROR, not a quiet
+	// no-op: the nightly job propagates it so the scheduler run turns red.
+	// (A missing key once froze prices for days while every run was green.)
 	if c.APIKey == "" {
 		if c.Log != nil {
 			c.Log.Warn("CRYPTO_PRICE_API_KEY not set; skipping crypto price refresh")
 		}
-		return nil
+		return fmt.Errorf("crypto refresh: CRYPTO_PRICE_API_KEY not set")
 	}
 	client := c.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
+	saved := 0
+	var lastErr error
 	for _, sym := range c.symbolsToRefresh(ctx) {
 		payload, err := c.fetchSymbol(ctx, client, sym)
 		if err != nil {
 			if c.Log != nil {
 				c.Log.Error("crypto API request failed", "symbol", sym, "err", err)
 			}
+			lastErr = err
 			continue
 		}
 		now := time.Now().UTC()
@@ -83,8 +89,10 @@ func (c *CryptoPrices) refreshLocked(ctx context.Context) error {
 			if c.Log != nil {
 				c.Log.Error("crypto price upsert failed", "symbol", sym, "err", err)
 			}
+			lastErr = err
 			continue
 		}
+		saved++
 		if c.Log != nil {
 			c.Log.Info("crypto price saved", "symbol", sym)
 		}
@@ -92,6 +100,9 @@ func (c *CryptoPrices) refreshLocked(ctx context.Context) error {
 	// Fresh prices in hand: bring every units-based holding up to date.
 	if err := c.RevalueHoldings(ctx); err != nil && c.Log != nil {
 		c.Log.Error("crypto revaluation failed", "err", err)
+	}
+	if saved == 0 && lastErr != nil {
+		return fmt.Errorf("crypto refresh: no symbols saved: %w", lastErr)
 	}
 	return nil
 }

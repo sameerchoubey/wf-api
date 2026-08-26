@@ -180,22 +180,37 @@ func (m *MFNavs) refreshLocked(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	saved := 0
+	var lastErr error
 	for _, code := range codes {
 		doc, err := m.fetchLatest(ctx, code)
 		if err != nil {
 			if m.Log != nil {
 				m.Log.Error("mf nav fetch failed", "scheme", code, "err", err)
 			}
+			lastErr = err
 			continue
 		}
-		if err := m.Store.UpsertMFNav(ctx, doc, time.Now()); err != nil && m.Log != nil {
-			m.Log.Error("mf nav upsert failed", "scheme", code, "err", err)
+		if err := m.Store.UpsertMFNav(ctx, doc, time.Now()); err != nil {
+			if m.Log != nil {
+				m.Log.Error("mf nav upsert failed", "scheme", code, "err", err)
+			}
+			lastErr = err
+			continue
 		}
+		saved++
 	}
-	if len(codes) > 0 && m.Log != nil {
-		m.Log.Info("mf navs refreshed", "count", len(codes))
+	if saved > 0 && m.Log != nil {
+		m.Log.Info("mf navs refreshed", "count", saved)
 	}
-	return m.Revalue(ctx)
+	if err := m.Revalue(ctx); err != nil {
+		return err
+	}
+	// Surface a feed-wide outage instead of a silently green run.
+	if saved == 0 && lastErr != nil {
+		return fmt.Errorf("mf refresh: no navs saved: %w", lastErr)
+	}
+	return nil
 }
 
 // Revalue recomputes every MF portfolio from cached NAVs. Assets with any
