@@ -349,6 +349,15 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")
 		return
 	}
+	// A units-based portfolio is priced from live feeds; drop any manual
+	// foreign-currency fields left over from before the conversion so
+	// nothing (e.g. the FX revaluer) can ever mistake it for one.
+	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund") {
+		if err := h.Store.ClearForeignFields(r.Context(), id); err != nil {
+			WriteError(w, http.StatusInternalServerError, "Could not update asset")
+			return
+		}
+	}
 	out, err := h.Store.FindAsset(r.Context(), id, uid)
 	if err != nil || out == nil {
 		WriteError(w, http.StatusInternalServerError, "Could not load asset")

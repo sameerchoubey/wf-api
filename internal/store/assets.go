@@ -224,3 +224,16 @@ func (s *Store) SetAssetTravelValuation(ctx context.Context, assetID string, val
 	}})
 	return err
 }
+
+// ClearForeignFields removes the manual foreign-currency fields from an
+// asset. Called when an asset becomes a units-based portfolio: $set-based
+// updates never remove fields, so without this the stale is_foreign /
+// foreign_amount of a former manual entry would ride along forever.
+func (s *Store) ClearForeignFields(ctx context.Context, assetID string) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$unset": bson.M{
+		"is_foreign":       "",
+		"foreign_currency": "",
+		"foreign_amount":   "",
+	}})
+	return err
+}
