@@ -54,6 +54,15 @@ func assetUpdateBSON(in models.AssetUpdate) bson.M {
 	if in.MFHoldings != nil {
 		m["mf_holdings"] = in.MFHoldings
 	}
+	if in.StockHoldings != nil {
+		m["stock_holdings"] = in.StockHoldings
+	}
+	if in.CashUSD != nil {
+		m["cash_usd"] = *in.CashUSD
+	}
+	if in.InvestedINR != nil {
+		m["invested_inr"] = *in.InvestedINR
+	}
 	return m
 }
 

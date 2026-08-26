@@ -57,7 +57,32 @@ type Asset struct {
 	// Mutual-fund portfolio (asset_type == "mutual_fund"): one asset
 	// holds many schemes; the server prices Σ units × latest NAV.
 	MFHoldings []MFHolding `bson:"mf_holdings,omitempty" json:"mf_holdings,omitempty"`
-	UpdatedAt  string      `bson:"updated_at" json:"updated_at"`
+	// US/LSE stock portfolio (asset_type == "us_stocks"): USD-quoted
+	// tickers plus an uninvested USD cash component; InvestedINR is the
+	// total INR actually spent converting to USD, enabling a true
+	// INR-basis gain (market + FX together).
+	StockHoldings []StockHolding `bson:"stock_holdings,omitempty" json:"stock_holdings,omitempty"`
+	CashUSD       *float64       `bson:"cash_usd,omitempty" json:"cash_usd,omitempty"`
+	InvestedINR   *float64       `bson:"invested_inr,omitempty" json:"invested_inr,omitempty"`
+	UpdatedAt     string         `bson:"updated_at" json:"updated_at"`
+}
+
+// StockHolding is one ticker inside a US-stocks portfolio. Name and
+// LastPrice are server-maintained from the quote feed; BuyPriceUSD is the
+// user's average cost (enables the USD-basis gain display).
+type StockHolding struct {
+	Symbol      string   `bson:"symbol" json:"symbol"`
+	Name        string   `bson:"name,omitempty" json:"name,omitempty"`
+	Units       float64  `bson:"units" json:"units"`
+	BuyPriceUSD *float64 `bson:"buy_price_usd,omitempty" json:"buy_price_usd,omitempty"`
+	LastPrice   float64  `bson:"last_price,omitempty" json:"last_price,omitempty"`
+}
+
+// StockSearchResult is one row returned by the ticker-search proxy.
+type StockSearchResult struct {
+	Symbol   string `json:"symbol"`
+	Name     string `json:"name"`
+	Exchange string `json:"exchange"`
 }
 
 // CryptoHolding is one coin inside a crypto portfolio asset.
@@ -98,6 +123,9 @@ type AssetCreate struct {
 	TotalValueINR        *float64    `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 	MFHoldings           []MFHolding     `json:"mf_holdings"`
+	StockHoldings        []StockHolding  `json:"stock_holdings"`
+	CashUSD              *float64        `json:"cash_usd"`
+	InvestedINR          *float64        `json:"invested_inr"`
 }
 
 type AssetUpdate struct {
@@ -113,6 +141,9 @@ type AssetUpdate struct {
 	TotalValueINR        *float64    `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 	MFHoldings           []MFHolding     `json:"mf_holdings"`
+	StockHoldings        []StockHolding  `json:"stock_holdings"`
+	CashUSD              *float64        `json:"cash_usd"`
+	InvestedINR          *float64        `json:"invested_inr"`
 }
 
 type Liability struct {

@@ -170,7 +170,7 @@ func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueIN
 func (s *Store) ListForeignAssets(ctx context.Context) ([]models.Asset, error) {
 	filter := bson.M{
 		"is_foreign": true,
-		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points"}},
+		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks"}},
 	}
 	cur, err := s.db.Collection("assets").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
 	if err != nil {
@@ -234,6 +234,53 @@ func (s *Store) ClearForeignFields(ctx context.Context, assetID string) error {
 		"is_foreign":       "",
 		"foreign_currency": "",
 		"foreign_amount":   "",
+	}})
+	return err
+}
+
+// ListStockAssets returns every US-stocks portfolio across all users,
+// used by the quote revaluation pass.
+func (s *Store) ListStockAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "us_stocks"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// DistinctStockSymbols lists the tickers currently held by any user, so
+// the quote refresh covers everything in portfolios.
+func (s *Store) DistinctStockSymbols(ctx context.Context) ([]string, error) {
+	vals, err := s.db.Collection("assets").Distinct(ctx, "stock_holdings.symbol", bson.M{"asset_type": "us_stocks"})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if s, ok := v.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// SetAssetStockValuation updates a US-stocks portfolio's computed values
+// and its holdings (whose name/last_price the revaluer refreshes);
+// updated_at is left alone so it still reflects the user's last edit.
+func (s *Store) SetAssetStockValuation(ctx context.Context, assetID string, valueINR, valueUSD float64, holdings []models.StockHolding) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value":   valueINR,
+		"total_value_usd": valueUSD,
+		"stock_holdings":  holdings,
 	}})
 	return err
 }

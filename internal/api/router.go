@@ -65,6 +65,8 @@ func NewRouter(cfg config.Config, h *Handler) http.Handler {
 			r.Get("/dashboard", h.Dashboard)
 			r.Get("/mf/search", h.MFSearch)
 			r.Get("/mf/nav", h.MFNav)
+			r.Get("/stocks/search", h.StockSearch)
+			r.Get("/stocks/quote", h.StockQuote)
 		})
 	})
 

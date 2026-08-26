@@ -118,6 +118,13 @@ func main() {
 		Snapshot: snapshotSvc,
 		Log:      log,
 	}
+	stocksSvc := &service.Stocks{
+		Store:    st,
+		Client:   &http.Client{Timeout: 30 * time.Second},
+		Rates:    ratesSvc,
+		Snapshot: snapshotSvc,
+		Log:      log,
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -133,6 +140,7 @@ func main() {
 		Crypto:   cryptoSvc,
 		MF:       mfSvc,
 		FX:       fxSvc,
+		Stocks:   stocksSvc,
 	}
 	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)

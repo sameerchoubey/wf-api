@@ -26,6 +26,64 @@ type Handler struct {
 	Crypto   *service.CryptoPrices
 	MF       *service.MFNavs
 	FX       *service.FXRevaluer
+	Stocks   *service.Stocks
+}
+
+// StockSearch proxies ticker search for the US-stocks holdings editor.
+func (h *Handler) StockSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) < 2 {
+		WriteJSON(w, http.StatusOK, []models.StockSearchResult{})
+		return
+	}
+	results, err := h.Stocks.Search(r.Context(), q)
+	if err != nil {
+		WriteError(w, http.StatusBadGateway, "Ticker search is unavailable right now")
+		return
+	}
+	if results == nil {
+		results = []models.StockSearchResult{}
+	}
+	WriteJSON(w, http.StatusOK, results)
+}
+
+// StockQuote returns one ticker's quote (cached, fetched on demand) so the
+// editor can preview values — and reject non-USD listings at selection time.
+func (h *Handler) StockQuote(w http.ResponseWriter, r *http.Request) {
+	symbol := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol")))
+	if symbol == "" {
+		WriteError(w, http.StatusBadRequest, "symbol required")
+		return
+	}
+	doc, err := h.Stocks.QuoteFor(r.Context(), symbol)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, doc)
+}
+
+// priceStockAsset validates a US-stocks portfolio and fills in the
+// server-computed values; client-sent values are ignored.
+func (h *Handler) priceStockAsset(ctx context.Context, a *models.Asset) error {
+	cash := 0.0
+	if a.CashUSD != nil {
+		if *a.CashUSD < 0 {
+			return fmt.Errorf("cash cannot be negative")
+		}
+		cash = *a.CashUSD
+	}
+	if len(a.StockHoldings) == 0 && cash <= 0 {
+		return fmt.Errorf("add at least one holding or a cash amount")
+	}
+	usd, inr, normalized, err := h.Stocks.ValuePortfolio(ctx, a.StockHoldings, cash)
+	if err != nil {
+		return err
+	}
+	a.StockHoldings = normalized
+	a.CurrentValue = inr
+	a.TotalValueUSD = &usd
+	return nil
 }
 
 // RunDailyJobs is the wake-and-work endpoint for the external scheduler:
@@ -56,6 +114,10 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.MF.Refresh(ctx); err != nil {
 		WriteError(w, http.StatusInternalServerError, "mf refresh failed")
+		return
+	}
+	if err := h.Stocks.Refresh(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "stock refresh failed")
 		return
 	}
 	if err := h.FX.Revalue(ctx); err != nil {
@@ -270,6 +332,9 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		TotalValueINR:        in.TotalValueINR,
 		CryptoHoldings:       in.CryptoHoldings,
 		MFHoldings:           in.MFHoldings,
+		StockHoldings:        in.StockHoldings,
+		CashUSD:              in.CashUSD,
+		InvestedINR:          in.InvestedINR,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
@@ -281,6 +346,12 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.AssetType != nil && *a.AssetType == "mutual_fund" {
 		if err := h.priceMFAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "us_stocks" {
+		if err := h.priceStockAsset(r.Context(), &a); err != nil {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -344,6 +415,26 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		update["mf_holdings"] = merged.MFHoldings
 		update["current_value"] = merged.CurrentValue
 	}
+	if effType != nil && *effType == "us_stocks" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.StockHoldings != nil {
+			merged.StockHoldings = in.StockHoldings
+		}
+		if in.CashUSD != nil {
+			merged.CashUSD = in.CashUSD
+		}
+		if in.InvestedINR != nil {
+			merged.InvestedINR = in.InvestedINR
+		}
+		if err := h.priceStockAsset(r.Context(), &merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["stock_holdings"] = merged.StockHoldings
+		update["current_value"] = merged.CurrentValue
+		update["total_value_usd"] = *merged.TotalValueUSD
+	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")
@@ -352,7 +443,7 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 	// A units-based portfolio is priced from live feeds; drop any manual
 	// foreign-currency fields left over from before the conversion so
 	// nothing (e.g. the FX revaluer) can ever mistake it for one.
-	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund") {
+	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks") {
 		if err := h.Store.ClearForeignFields(r.Context(), id); err != nil {
 			WriteError(w, http.StatusInternalServerError, "Could not update asset")
 			return
@@ -498,6 +589,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	refreshCtx, cancelRefresh := context.WithTimeout(r.Context(), 10*time.Second)
 	h.Crypto.RefreshIfStale(refreshCtx, time.Hour)
 	h.MF.RefreshIfStale(refreshCtx, 12*time.Hour)
+	h.Stocks.RefreshIfStale(refreshCtx, time.Hour)
 	h.FX.RevalueIfStale(refreshCtx, 12*time.Hour)
 	cancelRefresh()
 
