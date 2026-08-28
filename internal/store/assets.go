@@ -170,7 +170,7 @@ func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueIN
 func (s *Store) ListForeignAssets(ctx context.Context) ([]models.Asset, error) {
 	filter := bson.M{
 		"is_foreign": true,
-		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks"}},
+		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks", "gold"}},
 	}
 	cur, err := s.db.Collection("assets").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
 	if err != nil {
@@ -281,6 +281,36 @@ func (s *Store) SetAssetStockValuation(ctx context.Context, assetID string, valu
 		"current_value":   valueINR,
 		"total_value_usd": valueUSD,
 		"stock_holdings":  holdings,
+	}})
+	return err
+}
+
+// ListGoldAssets returns every gold portfolio across all users, used by
+// the daily IBJA-rate revaluation pass.
+func (s *Store) ListGoldAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "gold"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
+}
+
+// SetAssetGoldValuation updates a gold portfolio's computed value and its
+// holdings (whose last_rate the revaluer refreshes); updated_at is left
+// alone so it still reflects the user's last edit.
+func (s *Store) SetAssetGoldValuation(ctx context.Context, assetID string, valueINR float64, holdings []models.GoldHolding) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value": valueINR,
+		"gold_holdings": holdings,
 	}})
 	return err
 }

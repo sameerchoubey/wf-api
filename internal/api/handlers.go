@@ -27,6 +27,33 @@ type Handler struct {
 	MF       *service.MFNavs
 	FX       *service.FXRevaluer
 	Stocks   *service.Stocks
+	Gold     *service.Gold
+}
+
+// GoldRates returns the cached IBJA rates (fetched on demand when empty)
+// so the holdings editor can preview values.
+func (h *Handler) GoldRates(w http.ResponseWriter, r *http.Request) {
+	doc, err := h.Gold.Rates(r.Context())
+	if err != nil {
+		WriteError(w, http.StatusBadGateway, "Could not fetch gold rates")
+		return
+	}
+	WriteJSON(w, http.StatusOK, doc)
+}
+
+// priceGoldAsset validates a gold portfolio and fills in the
+// server-computed value; client-sent values are ignored.
+func (h *Handler) priceGoldAsset(ctx context.Context, a *models.Asset) error {
+	if len(a.GoldHoldings) == 0 {
+		return fmt.Errorf("add at least one gold item")
+	}
+	inr, normalized, err := h.Gold.ValueHoldings(ctx, a.GoldHoldings)
+	if err != nil {
+		return err
+	}
+	a.GoldHoldings = normalized
+	a.CurrentValue = inr
+	return nil
 }
 
 // StockSearch proxies ticker search for the US-stocks holdings editor.
@@ -118,6 +145,10 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.Stocks.Refresh(ctx); err != nil {
 		WriteError(w, http.StatusInternalServerError, "stock refresh failed")
+		return
+	}
+	if err := h.Gold.Refresh(ctx); err != nil {
+		WriteError(w, http.StatusInternalServerError, "gold refresh failed")
 		return
 	}
 	if err := h.FX.Revalue(ctx); err != nil {
@@ -405,6 +436,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		StockHoldings:        in.StockHoldings,
 		CashUSD:              in.CashUSD,
 		InvestedINR:          in.InvestedINR,
+		GoldHoldings:         in.GoldHoldings,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
@@ -422,6 +454,12 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.AssetType != nil && *a.AssetType == "us_stocks" {
 		if err := h.priceStockAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "gold" {
+		if err := h.priceGoldAsset(r.Context(), &a); err != nil {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -505,6 +543,19 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		update["current_value"] = merged.CurrentValue
 		update["total_value_usd"] = *merged.TotalValueUSD
 	}
+	if effType != nil && *effType == "gold" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.GoldHoldings != nil {
+			merged.GoldHoldings = in.GoldHoldings
+		}
+		if err := h.priceGoldAsset(r.Context(), &merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["gold_holdings"] = merged.GoldHoldings
+		update["current_value"] = merged.CurrentValue
+	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")
@@ -513,7 +564,7 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 	// A units-based portfolio is priced from live feeds; drop any manual
 	// foreign-currency fields left over from before the conversion so
 	// nothing (e.g. the FX revaluer) can ever mistake it for one.
-	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks") {
+	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks" || *effType == "gold") {
 		if err := h.Store.ClearForeignFields(r.Context(), id); err != nil {
 			WriteError(w, http.StatusInternalServerError, "Could not update asset")
 			return
@@ -660,6 +711,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	h.Crypto.RefreshIfStale(refreshCtx, time.Hour)
 	h.MF.RefreshIfStale(refreshCtx, 12*time.Hour)
 	h.Stocks.RefreshIfStale(refreshCtx, time.Hour)
+	h.Gold.RefreshIfStale(refreshCtx, 12*time.Hour)
 	h.FX.RevalueIfStale(refreshCtx, 12*time.Hour)
 	cancelRefresh()
 

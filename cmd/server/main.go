@@ -118,6 +118,12 @@ func main() {
 		Snapshot: snapshotSvc,
 		Log:      log,
 	}
+	goldSvc := &service.Gold{
+		Store:    st,
+		Client:   &http.Client{Timeout: 30 * time.Second},
+		Snapshot: snapshotSvc,
+		Log:      log,
+	}
 	stocksSvc := &service.Stocks{
 		Store:    st,
 		Client:   &http.Client{Timeout: 30 * time.Second},
@@ -141,6 +147,7 @@ func main() {
 		MF:       mfSvc,
 		FX:       fxSvc,
 		Stocks:   stocksSvc,
+		Gold:     goldSvc,
 	}
 	handler.Store(swapHandler{api.NewRouter(cfg, h)})
 	log.Info("service ready", "mongodb", true)

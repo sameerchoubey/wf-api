@@ -78,7 +78,21 @@ type Asset struct {
 	StockHoldings []StockHolding `bson:"stock_holdings,omitempty" json:"stock_holdings,omitempty"`
 	CashUSD       *float64       `bson:"cash_usd,omitempty" json:"cash_usd,omitempty"`
 	InvestedINR   *float64       `bson:"invested_inr,omitempty" json:"invested_inr,omitempty"`
-	UpdatedAt     string         `bson:"updated_at" json:"updated_at"`
+	// Gold portfolio (asset_type == "gold"): grams per karat, priced from
+	// the daily IBJA domestic rates.
+	GoldHoldings []GoldHolding `bson:"gold_holdings,omitempty" json:"gold_holdings,omitempty"`
+	UpdatedAt    string        `bson:"updated_at" json:"updated_at"`
+}
+
+// GoldHolding is one item inside a gold portfolio. LastRate (₹/gram) is
+// server-maintained from the IBJA feed; BuyPerGram is the user's average
+// cost (enables the gain display).
+type GoldHolding struct {
+	Label      string   `bson:"label,omitempty" json:"label,omitempty"`
+	Karat      string   `bson:"karat" json:"karat"` // "24", "22" or "18"
+	Grams      float64  `bson:"grams" json:"grams"`
+	BuyPerGram *float64 `bson:"buy_per_gram,omitempty" json:"buy_per_gram,omitempty"`
+	LastRate   float64  `bson:"last_rate,omitempty" json:"last_rate,omitempty"`
 }
 
 // StockHolding is one ticker inside a US-stocks portfolio. Name and
@@ -125,39 +139,41 @@ type MFSearchResult struct {
 }
 
 type AssetCreate struct {
-	Name                 string      `json:"name"`
-	Category             string      `json:"category"`
-	CurrentValue         float64     `json:"current_value"`
-	IsForeign            *bool       `json:"is_foreign"`
-	ForeignCurrency      *string     `json:"foreign_currency"`
-	ForeignAmount        *float64    `json:"foreign_amount"`
-	AssetType            *string     `json:"asset_type"`
-	TravelPointsPrograms interface{} `json:"travel_points_programs"`
-	TotalValueUSD        *float64    `json:"total_value_usd"`
-	TotalValueINR        *float64    `json:"total_value_inr"`
+	Name                 string          `json:"name"`
+	Category             string          `json:"category"`
+	CurrentValue         float64         `json:"current_value"`
+	IsForeign            *bool           `json:"is_foreign"`
+	ForeignCurrency      *string         `json:"foreign_currency"`
+	ForeignAmount        *float64        `json:"foreign_amount"`
+	AssetType            *string         `json:"asset_type"`
+	TravelPointsPrograms interface{}     `json:"travel_points_programs"`
+	TotalValueUSD        *float64        `json:"total_value_usd"`
+	TotalValueINR        *float64        `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 	MFHoldings           []MFHolding     `json:"mf_holdings"`
 	StockHoldings        []StockHolding  `json:"stock_holdings"`
 	CashUSD              *float64        `json:"cash_usd"`
 	InvestedINR          *float64        `json:"invested_inr"`
+	GoldHoldings         []GoldHolding   `json:"gold_holdings"`
 }
 
 type AssetUpdate struct {
-	Name                 *string     `json:"name"`
-	Category             *string     `json:"category"`
-	CurrentValue         *float64    `json:"current_value"`
-	IsForeign            *bool       `json:"is_foreign"`
-	ForeignCurrency      *string     `json:"foreign_currency"`
-	ForeignAmount        *float64    `json:"foreign_amount"`
-	AssetType            *string     `json:"asset_type"`
-	TravelPointsPrograms interface{} `json:"travel_points_programs"`
-	TotalValueUSD        *float64    `json:"total_value_usd"`
-	TotalValueINR        *float64    `json:"total_value_inr"`
+	Name                 *string         `json:"name"`
+	Category             *string         `json:"category"`
+	CurrentValue         *float64        `json:"current_value"`
+	IsForeign            *bool           `json:"is_foreign"`
+	ForeignCurrency      *string         `json:"foreign_currency"`
+	ForeignAmount        *float64        `json:"foreign_amount"`
+	AssetType            *string         `json:"asset_type"`
+	TravelPointsPrograms interface{}     `json:"travel_points_programs"`
+	TotalValueUSD        *float64        `json:"total_value_usd"`
+	TotalValueINR        *float64        `json:"total_value_inr"`
 	CryptoHoldings       []CryptoHolding `json:"crypto_holdings"`
 	MFHoldings           []MFHolding     `json:"mf_holdings"`
 	StockHoldings        []StockHolding  `json:"stock_holdings"`
 	CashUSD              *float64        `json:"cash_usd"`
 	InvestedINR          *float64        `json:"invested_inr"`
+	GoldHoldings         []GoldHolding   `json:"gold_holdings"`
 }
 
 type Liability struct {
