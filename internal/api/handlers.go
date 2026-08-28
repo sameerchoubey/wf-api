@@ -131,6 +131,76 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// Me returns the signed-in user's profile.
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r.Context())
+	u, err := h.Store.FindUserByID(r.Context(), uid)
+	if err != nil || u == nil {
+		WriteError(w, http.StatusInternalServerError, "Could not load profile")
+		return
+	}
+	WriteJSON(w, http.StatusOK, u)
+}
+
+// UpdateMe sets the user's display names.
+func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	var in models.ProfileUpdate
+	if err := decodeJSON(r, &in); err != nil {
+		WriteError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	first := strings.TrimSpace(in.FirstName)
+	last := strings.TrimSpace(in.LastName)
+	if len(first) > 60 || len(last) > 60 {
+		WriteError(w, http.StatusBadRequest, "Names must be 60 characters or fewer")
+		return
+	}
+	uid := middleware.UserID(r.Context())
+	if err := h.Store.UpdateUserProfile(r.Context(), uid, first, last); err != nil {
+		WriteError(w, http.StatusInternalServerError, "Could not update profile")
+		return
+	}
+	u, err := h.Store.FindUserByID(r.Context(), uid)
+	if err != nil || u == nil {
+		WriteError(w, http.StatusInternalServerError, "Could not load profile")
+		return
+	}
+	WriteJSON(w, http.StatusOK, u)
+}
+
+// ChangePassword verifies the current password before setting a new one.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var in models.PasswordChange
+	if err := decodeJSON(r, &in); err != nil {
+		WriteError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	if len(in.NewPassword) < 6 {
+		WriteError(w, http.StatusBadRequest, "New password must be at least 6 characters")
+		return
+	}
+	uid := middleware.UserID(r.Context())
+	u, err := h.Store.FindUserByID(r.Context(), uid)
+	if err != nil || u == nil {
+		WriteError(w, http.StatusInternalServerError, "Could not load profile")
+		return
+	}
+	if !auth.VerifyPassword(in.CurrentPassword, u.PasswordHash) {
+		WriteError(w, http.StatusUnauthorized, "Current password is incorrect")
+		return
+	}
+	hash, err := auth.HashPassword(in.NewPassword)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "Could not hash password")
+		return
+	}
+	if err := h.Store.UpdateUserPassword(r.Context(), uid, hash); err != nil {
+		WriteError(w, http.StatusInternalServerError, "Could not update password")
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Password updated"})
+}
+
 // MFSearch proxies mutual-fund scheme search for the holdings editor.
 func (h *Handler) MFSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))

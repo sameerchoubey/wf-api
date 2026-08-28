@@ -9,8 +9,22 @@ type User struct {
 	ID           string `bson:"id" json:"id"`
 	Email        string `bson:"email" json:"email"`
 	PasswordHash string `bson:"password_hash" json:"-"`
+	FirstName    string `bson:"first_name,omitempty" json:"first_name,omitempty"`
+	LastName     string `bson:"last_name,omitempty" json:"last_name,omitempty"`
 	IsVerified   bool   `bson:"is_verified" json:"is_verified"`
 	CreatedAt    string `bson:"created_at" json:"created_at"`
+}
+
+// ProfileUpdate is the PUT /me payload.
+type ProfileUpdate struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+// PasswordChange is the POST /me/password payload.
+type PasswordChange struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 type UserRegister struct {
