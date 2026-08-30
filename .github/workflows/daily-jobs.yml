@@ -63,3 +63,4 @@ jobs:
           path: db-backup-*.gz.enc
           retention-days: 30
           if-no-files-found: error
+          overwrite: true # same-day re-runs replace that day's backup
