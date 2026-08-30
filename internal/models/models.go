@@ -91,7 +91,17 @@ type Asset struct {
 	BankHoldings []BankHolding `bson:"bank_holdings,omitempty" json:"bank_holdings,omitempty"`
 	// Loans given out (asset_type == "loans"): money owed TO the user.
 	LoanHoldings []LoanHolding `bson:"loan_holdings,omitempty" json:"loan_holdings,omitempty"`
+	// Bonds (asset_type == "bonds"): invested vs current per bond,
+	// entered manually (no market feed).
+	BondHoldings []BondHolding `bson:"bond_holdings,omitempty" json:"bond_holdings,omitempty"`
 	UpdatedAt    string        `bson:"updated_at" json:"updated_at"`
+}
+
+// BondHolding is one bond inside a bonds portfolio.
+type BondHolding struct {
+	Label       string   `bson:"label" json:"label"`
+	InvestedINR *float64 `bson:"invested_inr,omitempty" json:"invested_inr,omitempty"`
+	CurrentINR  float64  `bson:"current_inr" json:"current_inr"`
 }
 
 // BankHolding is one account inside a bank-accounts portfolio.
@@ -189,6 +199,7 @@ type AssetCreate struct {
 	GovtHoldings         []GovtHolding   `json:"govt_holdings"`
 	BankHoldings         []BankHolding   `json:"bank_holdings"`
 	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
+	BondHoldings         []BondHolding   `json:"bond_holdings"`
 }
 
 type AssetUpdate struct {
@@ -211,6 +222,7 @@ type AssetUpdate struct {
 	GovtHoldings         []GovtHolding   `json:"govt_holdings"`
 	BankHoldings         []BankHolding   `json:"bank_holdings"`
 	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
+	BondHoldings         []BondHolding   `json:"bond_holdings"`
 }
 
 type Liability struct {

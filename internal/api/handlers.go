@@ -95,6 +95,28 @@ func (h *Handler) priceBankAsset(ctx context.Context, a *models.Asset) error {
 	return nil
 }
 
+// priceBondAsset totals bonds; invested vs current is user-entered.
+func (h *Handler) priceBondAsset(a *models.Asset) error {
+	if len(a.BondHoldings) == 0 {
+		return fmt.Errorf("add at least one bond")
+	}
+	total := 0.0
+	for i, b := range a.BondHoldings {
+		if strings.TrimSpace(b.Label) == "" {
+			return fmt.Errorf("bond %d: name required", i+1)
+		}
+		if b.CurrentINR <= 0 {
+			return fmt.Errorf("%s: current value must be greater than zero", b.Label)
+		}
+		if b.InvestedINR != nil && *b.InvestedINR < 0 {
+			return fmt.Errorf("%s: invested amount cannot be negative", b.Label)
+		}
+		total += b.CurrentINR
+	}
+	a.CurrentValue = total
+	return nil
+}
+
 // priceLoanAsset totals money lent out.
 func (h *Handler) priceLoanAsset(a *models.Asset) error {
 	if len(a.LoanHoldings) == 0 {
@@ -516,6 +538,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		GovtHoldings:         in.GovtHoldings,
 		BankHoldings:         in.BankHoldings,
 		LoanHoldings:         in.LoanHoldings,
+		BondHoldings:         in.BondHoldings,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
@@ -557,6 +580,12 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.AssetType != nil && *a.AssetType == "loans" {
 		if err := h.priceLoanAsset(&a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "bonds" {
+		if err := h.priceBondAsset(&a); err != nil {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -692,6 +721,19 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		update["loan_holdings"] = merged.LoanHoldings
 		update["current_value"] = merged.CurrentValue
 	}
+	if effType != nil && *effType == "bonds" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.BondHoldings != nil {
+			merged.BondHoldings = in.BondHoldings
+		}
+		if err := h.priceBondAsset(&merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["bond_holdings"] = merged.BondHoldings
+		update["current_value"] = merged.CurrentValue
+	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")
@@ -700,7 +742,7 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 	// A units-based portfolio is priced from live feeds; drop any manual
 	// foreign-currency fields left over from before the conversion so
 	// nothing (e.g. the FX revaluer) can ever mistake it for one.
-	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks" || *effType == "gold" || *effType == "govt_schemes" || *effType == "bank_accounts" || *effType == "loans") {
+	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks" || *effType == "gold" || *effType == "govt_schemes" || *effType == "bank_accounts" || *effType == "loans" || *effType == "bonds") {
 		if err := h.Store.ClearForeignFields(r.Context(), id); err != nil {
 			WriteError(w, http.StatusInternalServerError, "Could not update asset")
 			return

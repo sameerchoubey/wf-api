@@ -170,7 +170,7 @@ func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueIN
 func (s *Store) ListForeignAssets(ctx context.Context) ([]models.Asset, error) {
 	filter := bson.M{
 		"is_foreign": true,
-		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks", "gold", "govt_schemes", "bank_accounts", "loans"}},
+		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks", "gold", "govt_schemes", "bank_accounts", "loans", "bonds"}},
 	}
 	cur, err := s.db.Collection("assets").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
 	if err != nil {
