@@ -19,3 +19,47 @@ jobs:
           curl --fail-with-body -sS -X POST "https://wf-api.fly.dev/api/internal/daily" \
             -H "X-Job-Token: ${{ secrets.JOB_TOKEN }}" \
             --max-time 180 --retry 3 --retry-delay 30 --retry-all-errors
+
+  # Nightly encrypted backup: the Atlas free tier has no snapshots/restore,
+  # so this is the only recovery path. Dumps the whole cluster, encrypts it,
+  # and keeps a rolling 30 days of artifacts (auto-deleted by GitHub).
+  # Requires the MONGO_URL and BACKUP_PASSPHRASE repo secrets.
+  # Restore: unzip artifact, then
+  #   openssl enc -d -aes-256-cbc -pbkdf2 -in <file>.enc -out backup.gz
+  #   mongorestore --uri="..." --archive=backup.gz --gzip
+  backup:
+    runs-on: ubuntu-22.04
+    needs: run
+    if: always() # a failed feed step must not skip the backup
+    steps:
+      - name: Install mongodump
+        run: |
+          wget -q https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.9.5.deb
+          sudo apt-get install -y ./mongodb-database-tools-ubuntu2204-x86_64-100.9.5.deb
+
+      - name: Dump database
+        env:
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+        run: |
+          mongodump --uri="$MONGO_URL" --archive=backup.gz --gzip
+          # An empty/truncated dump should fail the run, not get archived
+          test "$(stat -c%s backup.gz)" -gt 10240
+
+      - name: Encrypt
+        id: enc
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          DATE=$(date -u +%F)
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in backup.gz -out "db-backup-$DATE.gz.enc" -pass env:BACKUP_PASSPHRASE
+          rm backup.gz
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ steps.enc.outputs.date }}
+          path: db-backup-*.gz.enc
+          retention-days: 30
+          if-no-files-found: error
