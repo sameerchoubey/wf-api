@@ -80,6 +80,44 @@ func (f *FXRevaluer) revalueLocked(ctx context.Context) error {
 		}
 	}
 
+	// Bank-account portfolios: re-total accounts, converting non-INR
+	// balances at today's rates.
+	banks, err := f.Store.ListBankAssets(ctx)
+	if err != nil {
+		return err
+	}
+	for _, a := range banks {
+		if len(a.BankHoldings) == 0 {
+			continue
+		}
+		total := 0.0
+		ok := true
+		for _, b := range a.BankHoldings {
+			rate := 1.0
+			if b.Currency != "INR" {
+				rate = rates[b.Currency]
+				if rate <= 0 {
+					ok = false
+					break
+				}
+			}
+			total += b.Balance * rate
+		}
+		if !ok {
+			continue
+		}
+		if err := f.Store.SetAssetCurrentValue(ctx, a.ID, total); err != nil {
+			if f.Log != nil {
+				f.Log.Error("bank revalue failed", "asset", a.ID, "err", err)
+			}
+			continue
+		}
+		updated++
+		if a.UserID != nil {
+			affected[*a.UserID] = true
+		}
+	}
+
 	// Travel points: programs are valued in USD; re-convert that total.
 	travel, err := f.Store.ListTravelPointAssets(ctx)
 	if err != nil {

@@ -81,7 +81,38 @@ type Asset struct {
 	// Gold portfolio (asset_type == "gold"): grams per karat, priced from
 	// the daily IBJA domestic rates.
 	GoldHoldings []GoldHolding `bson:"gold_holdings,omitempty" json:"gold_holdings,omitempty"`
+	// Government schemes (asset_type == "govt_schemes"): NPS/PPF/EPF/SSY
+	// balances entered manually (no market feed); invested vs current
+	// powers the gain display.
+	GovtHoldings []GovtHolding `bson:"govt_holdings,omitempty" json:"govt_holdings,omitempty"`
+	// Bank accounts (asset_type == "bank_accounts"): balances per account
+	// in their native currency; non-INR balances are re-converted by the
+	// FX revaluation pass.
+	BankHoldings []BankHolding `bson:"bank_holdings,omitempty" json:"bank_holdings,omitempty"`
+	// Loans given out (asset_type == "loans"): money owed TO the user.
+	LoanHoldings []LoanHolding `bson:"loan_holdings,omitempty" json:"loan_holdings,omitempty"`
 	UpdatedAt    string        `bson:"updated_at" json:"updated_at"`
+}
+
+// BankHolding is one account inside a bank-accounts portfolio.
+type BankHolding struct {
+	Label    string  `bson:"label" json:"label"`
+	Currency string  `bson:"currency" json:"currency"` // INR, USD or EUR
+	Balance  float64 `bson:"balance" json:"balance"`
+}
+
+// LoanHolding is one loan inside a loans-given portfolio.
+type LoanHolding struct {
+	Label     string  `bson:"label" json:"label"`
+	AmountINR float64 `bson:"amount_inr" json:"amount_inr"`
+}
+
+// GovtHolding is one scheme inside a government-schemes portfolio.
+type GovtHolding struct {
+	Scheme      string   `bson:"scheme" json:"scheme"` // NPS, PPF, EPF, SSY or OTHER
+	Label       string   `bson:"label,omitempty" json:"label,omitempty"`
+	InvestedINR *float64 `bson:"invested_inr,omitempty" json:"invested_inr,omitempty"`
+	CurrentINR  float64  `bson:"current_inr" json:"current_inr"`
 }
 
 // GoldHolding is one item inside a gold portfolio. LastRate (₹/gram) is
@@ -155,6 +186,9 @@ type AssetCreate struct {
 	CashUSD              *float64        `json:"cash_usd"`
 	InvestedINR          *float64        `json:"invested_inr"`
 	GoldHoldings         []GoldHolding   `json:"gold_holdings"`
+	GovtHoldings         []GovtHolding   `json:"govt_holdings"`
+	BankHoldings         []BankHolding   `json:"bank_holdings"`
+	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
 }
 
 type AssetUpdate struct {
@@ -174,6 +208,9 @@ type AssetUpdate struct {
 	CashUSD              *float64        `json:"cash_usd"`
 	InvestedINR          *float64        `json:"invested_inr"`
 	GoldHoldings         []GoldHolding   `json:"gold_holdings"`
+	GovtHoldings         []GovtHolding   `json:"govt_holdings"`
+	BankHoldings         []BankHolding   `json:"bank_holdings"`
+	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
 }
 
 type Liability struct {

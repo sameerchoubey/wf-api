@@ -57,6 +57,87 @@ func (h *Handler) priceGoldAsset(ctx context.Context, a *models.Asset) error {
 	return nil
 }
 
+var validGovtSchemes = map[string]bool{"NPS": true, "PPF": true, "EPF": true, "SSY": true, "OTHER": true}
+
+var validBankCurrencies = map[string]bool{"INR": true, "USD": true, "EUR": true}
+
+// priceBankAsset totals accounts in INR using today's FX for non-INR
+// balances; the FX revaluation pass keeps the total current afterwards.
+func (h *Handler) priceBankAsset(ctx context.Context, a *models.Asset) error {
+	if len(a.BankHoldings) == 0 {
+		return fmt.Errorf("add at least one account")
+	}
+	rates, err := h.Rates.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("exchange rates unavailable, try again")
+	}
+	total := 0.0
+	for i, b := range a.BankHoldings {
+		if strings.TrimSpace(b.Label) == "" {
+			return fmt.Errorf("account %d: name required", i+1)
+		}
+		if !validBankCurrencies[b.Currency] {
+			return fmt.Errorf("%s: currency must be INR, USD or EUR", b.Label)
+		}
+		if b.Balance < 0 {
+			return fmt.Errorf("%s: balance cannot be negative", b.Label)
+		}
+		rate := 1.0
+		if b.Currency != "INR" {
+			rate = rates[b.Currency]
+			if rate <= 0 {
+				return fmt.Errorf("%s: no rate for %s", b.Label, b.Currency)
+			}
+		}
+		total += b.Balance * rate
+	}
+	a.CurrentValue = total
+	return nil
+}
+
+// priceLoanAsset totals money lent out.
+func (h *Handler) priceLoanAsset(a *models.Asset) error {
+	if len(a.LoanHoldings) == 0 {
+		return fmt.Errorf("add at least one loan")
+	}
+	total := 0.0
+	for i, l := range a.LoanHoldings {
+		if strings.TrimSpace(l.Label) == "" {
+			return fmt.Errorf("loan %d: name required", i+1)
+		}
+		if l.AmountINR <= 0 {
+			return fmt.Errorf("%s: amount must be greater than zero", l.Label)
+		}
+		total += l.AmountINR
+	}
+	a.CurrentValue = total
+	return nil
+}
+
+// priceGovtAsset validates a government-schemes portfolio and totals it.
+// There is no market feed — both invested and current are user-entered —
+// but the server still owns the arithmetic.
+func (h *Handler) priceGovtAsset(a *models.Asset) error {
+	if len(a.GovtHoldings) == 0 {
+		return fmt.Errorf("add at least one scheme")
+	}
+	total := 0.0
+	for i, g := range a.GovtHoldings {
+		if !validGovtSchemes[g.Scheme] {
+			return fmt.Errorf("scheme %d: must be NPS, PPF, EPF, SSY or OTHER", i+1)
+		}
+		if g.CurrentINR <= 0 {
+			return fmt.Errorf("%s: current amount must be greater than zero", g.Scheme)
+		}
+		if g.InvestedINR != nil && *g.InvestedINR < 0 {
+			return fmt.Errorf("%s: invested amount cannot be negative", g.Scheme)
+		}
+		total += g.CurrentINR
+	}
+	a.CurrentValue = total
+	return nil
+}
+
 // StockSearch proxies ticker search for the US-stocks holdings editor.
 func (h *Handler) StockSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -432,6 +513,9 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		CashUSD:              in.CashUSD,
 		InvestedINR:          in.InvestedINR,
 		GoldHoldings:         in.GoldHoldings,
+		GovtHoldings:         in.GovtHoldings,
+		BankHoldings:         in.BankHoldings,
+		LoanHoldings:         in.LoanHoldings,
 		UpdatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.UserID = stringPtr(uid)
@@ -455,6 +539,24 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.AssetType != nil && *a.AssetType == "gold" {
 		if err := h.priceGoldAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "govt_schemes" {
+		if err := h.priceGovtAsset(&a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "bank_accounts" {
+		if err := h.priceBankAsset(r.Context(), &a); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if a.AssetType != nil && *a.AssetType == "loans" {
+		if err := h.priceLoanAsset(&a); err != nil {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -551,6 +653,45 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 		update["gold_holdings"] = merged.GoldHoldings
 		update["current_value"] = merged.CurrentValue
 	}
+	if effType != nil && *effType == "govt_schemes" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.GovtHoldings != nil {
+			merged.GovtHoldings = in.GovtHoldings
+		}
+		if err := h.priceGovtAsset(&merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["govt_holdings"] = merged.GovtHoldings
+		update["current_value"] = merged.CurrentValue
+	}
+	if effType != nil && *effType == "bank_accounts" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.BankHoldings != nil {
+			merged.BankHoldings = in.BankHoldings
+		}
+		if err := h.priceBankAsset(r.Context(), &merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["bank_holdings"] = merged.BankHoldings
+		update["current_value"] = merged.CurrentValue
+	}
+	if effType != nil && *effType == "loans" {
+		merged := *existing
+		merged.AssetType = effType
+		if in.LoanHoldings != nil {
+			merged.LoanHoldings = in.LoanHoldings
+		}
+		if err := h.priceLoanAsset(&merged); err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update["loan_holdings"] = merged.LoanHoldings
+		update["current_value"] = merged.CurrentValue
+	}
 	update["updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := h.Store.UpdateAsset(r.Context(), id, uid, update); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Could not update asset")
@@ -559,7 +700,7 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 	// A units-based portfolio is priced from live feeds; drop any manual
 	// foreign-currency fields left over from before the conversion so
 	// nothing (e.g. the FX revaluer) can ever mistake it for one.
-	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks" || *effType == "gold") {
+	if effType != nil && (*effType == "crypto" || *effType == "mutual_fund" || *effType == "us_stocks" || *effType == "gold" || *effType == "govt_schemes" || *effType == "bank_accounts" || *effType == "loans") {
 		if err := h.Store.ClearForeignFields(r.Context(), id); err != nil {
 			WriteError(w, http.StatusInternalServerError, "Could not update asset")
 			return

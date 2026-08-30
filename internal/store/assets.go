@@ -170,7 +170,7 @@ func (s *Store) SetAssetMFValuation(ctx context.Context, assetID string, valueIN
 func (s *Store) ListForeignAssets(ctx context.Context) ([]models.Asset, error) {
 	filter := bson.M{
 		"is_foreign": true,
-		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks", "gold"}},
+		"asset_type": bson.M{"$nin": bson.A{"crypto", "mutual_fund", "travel_points", "us_stocks", "gold", "govt_schemes", "bank_accounts", "loans"}},
 	}
 	cur, err := s.db.Collection("assets").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
 	if err != nil {
@@ -313,4 +313,23 @@ func (s *Store) SetAssetGoldValuation(ctx context.Context, assetID string, value
 		"gold_holdings": holdings,
 	}})
 	return err
+}
+
+// ListBankAssets returns every bank-accounts portfolio across all users,
+// used by the FX revaluation pass (non-INR balances move with rates).
+func (s *Store) ListBankAssets(ctx context.Context) ([]models.Asset, error) {
+	cur, err := s.db.Collection("assets").Find(ctx, bson.M{"asset_type": "bank_accounts"}, options.Find().SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Asset
+	for cur.Next(ctx) {
+		var a models.Asset
+		if err := cur.Decode(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, cur.Err()
 }
