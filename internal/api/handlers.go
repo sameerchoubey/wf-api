@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -129,34 +130,28 @@ func (h *Handler) RunDailyJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	// Fresh market data first so the snapshots capture today's values.
-	// FX comes first: the crypto and FX revaluations convert with it.
-	if err := h.Rates.Refresh(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "fx rates refresh failed")
-		return
+	// Fresh market data first so the snapshots capture today's values;
+	// FX first because the other revaluations convert with it. A failing
+	// feed must NOT abort the chain: each revaluer holds its last cached
+	// data, and the snapshots must be written every night regardless
+	// (one dead feed once cost a whole snapshot day). Failures are still
+	// collected into a 500 so the scheduled run turns red.
+	var failed []string
+	step := func(name string, fn func(context.Context) error) {
+		if err := fn(ctx); err != nil {
+			slog.Error("daily job step failed", "step", name, "err", err)
+			failed = append(failed, name)
+		}
 	}
-	if err := h.Crypto.Refresh(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "crypto refresh failed")
-		return
-	}
-	if err := h.MF.Refresh(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "mf refresh failed")
-		return
-	}
-	if err := h.Stocks.Refresh(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "stock refresh failed")
-		return
-	}
-	if err := h.Gold.Refresh(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "gold refresh failed")
-		return
-	}
-	if err := h.FX.Revalue(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "fx revaluation failed")
-		return
-	}
-	if err := h.Snapshot.CreateSnapshotsForAllUsers(ctx); err != nil {
-		WriteError(w, http.StatusInternalServerError, "snapshots failed")
+	step("fx-rates", h.Rates.Refresh)
+	step("crypto", h.Crypto.Refresh)
+	step("mf", h.MF.Refresh)
+	step("stocks", h.Stocks.Refresh)
+	step("gold", h.Gold.Refresh)
+	step("fx-revalue", h.FX.Revalue)
+	step("snapshots", h.Snapshot.CreateSnapshotsForAllUsers)
+	if len(failed) > 0 {
+		WriteError(w, http.StatusInternalServerError, "failed steps: "+strings.Join(failed, ", "))
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})

@@ -30,6 +30,11 @@ const ibjaUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 // window before that day's PM fixing exists.
 var ibjaLabelRe = regexp.MustCompile(`id="lblGold(999|916|750)_(AM|PM)">\s*([0-9][0-9,.]*)`)
 
+// On weekends/holidays (and overnight before a fixing) the AM/PM table is
+// not rendered at all; the "compare" widget still carries the last
+// published rate, already in ₹ per 1 gram.
+var ibjaCompareRe = regexp.MustCompile(`id="GoldRatesCompare(999|916|750)">\s*([0-9][0-9,.]*)`)
+
 type Gold struct {
 	Store    *store.Store
 	Client   *http.Client
@@ -84,11 +89,29 @@ func (g *Gold) fetchRates(ctx context.Context) (store.GoldRatesDoc, error) {
 		per10g[m[1]][m[2]] = v
 	}
 
+	// Fallback: the per-gram compare widget (present even when the AM/PM
+	// table is not rendered — weekends, holidays, overnight).
+	perGram := map[string]float64{}
+	for _, m := range ibjaCompareRe.FindAllStringSubmatch(string(body), -1) {
+		clean := ""
+		for _, r := range m[2] {
+			if r >= '0' && r <= '9' || r == '.' {
+				clean += string(r)
+			}
+		}
+		if v, err := strconv.ParseFloat(clean, 64); err == nil && v > 0 {
+			perGram[m[1]] = v
+		}
+	}
+
 	pick := func(purity string) float64 {
 		if v := per10g[purity]["PM"]; v > 0 {
 			return v / 10
 		}
-		return per10g[purity]["AM"] / 10
+		if v := per10g[purity]["AM"]; v > 0 {
+			return v / 10
+		}
+		return perGram[purity]
 	}
 	doc := store.GoldRatesDoc{Rate24K: pick("999"), Rate22K: pick("916"), Rate18K: pick("750")}
 	// Sanity: all three present and ordered by purity, or the page layout
