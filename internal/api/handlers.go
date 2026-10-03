@@ -920,6 +920,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	for _, l := range liabs {
 		totalLiab += l.Amount
 	}
+	invested := (&service.CostBasis{Store: h.Store}).Totals(r.Context(), assets)
 	WriteJSON(w, http.StatusOK, models.DashboardData{
 		Assets:           assets,
 		Liabilities:      liabs,
@@ -927,6 +928,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		TotalAssetsUSD:   totalUSD,
 		TotalLiabilities: totalLiab,
 		NetWorth:         totalAssets - totalLiab,
+		Invested:         invested,
 	})
 }
 

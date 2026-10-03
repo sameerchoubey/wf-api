@@ -95,6 +95,17 @@ type Asset struct {
 	// entered manually (no market feed).
 	BondHoldings []BondHolding `bson:"bond_holdings,omitempty" json:"bond_holdings,omitempty"`
 	UpdatedAt    string        `bson:"updated_at" json:"updated_at"`
+	// CostBasis is computed on read (never stored on the asset): money put
+	// in vs what that money is worth now.
+	CostBasis *AssetCostBasis `bson:"-" json:"cost_basis,omitempty"`
+}
+
+// AssetCostBasis is invested vs current for the holdings whose cost is
+// known; Untracked is the current value of everything else.
+type AssetCostBasis struct {
+	Invested  float64 `bson:"invested" json:"invested"`
+	Current   float64 `bson:"current" json:"current"`
+	Untracked float64 `bson:"untracked" json:"untracked"`
 }
 
 // BondHolding is one bond inside a bonds portfolio.
@@ -247,25 +258,28 @@ type LiabilityUpdate struct {
 }
 
 type Snapshot struct {
-	ID               string        `bson:"id,omitempty" json:"id,omitempty"`
-	UserID           string        `bson:"user_id" json:"user_id"`
-	Date             string        `bson:"date" json:"date"`
-	Timestamp        string        `bson:"timestamp" json:"timestamp"`
-	TotalAssets      float64       `bson:"total_assets" json:"total_assets"`
-	TotalAssetsUSD   float64       `bson:"total_assets_usd,omitempty" json:"total_assets_usd,omitempty"`
-	TotalLiabilities float64       `bson:"total_liabilities" json:"total_liabilities"`
-	NetWorth         float64       `bson:"net_worth" json:"net_worth"`
-	Assets           []interface{} `bson:"assets" json:"assets"`
-	Liabilities      []interface{} `bson:"liabilities" json:"liabilities"`
+	ID               string  `bson:"id,omitempty" json:"id,omitempty"`
+	UserID           string  `bson:"user_id" json:"user_id"`
+	Date             string  `bson:"date" json:"date"`
+	Timestamp        string  `bson:"timestamp" json:"timestamp"`
+	TotalAssets      float64 `bson:"total_assets" json:"total_assets"`
+	TotalAssetsUSD   float64 `bson:"total_assets_usd,omitempty" json:"total_assets_usd,omitempty"`
+	TotalLiabilities float64 `bson:"total_liabilities" json:"total_liabilities"`
+	NetWorth         float64 `bson:"net_worth" json:"net_worth"`
+	// Invested is absent on snapshots written before cost tracking shipped.
+	Invested    *AssetCostBasis `bson:"invested,omitempty" json:"invested,omitempty"`
+	Assets      []interface{}   `bson:"assets" json:"assets"`
+	Liabilities []interface{}   `bson:"liabilities" json:"liabilities"`
 }
 
 type DashboardData struct {
-	Assets           []Asset     `json:"assets"`
-	Liabilities      []Liability `json:"liabilities"`
-	TotalAssets      float64     `json:"total_assets"`
-	TotalAssetsUSD   float64     `json:"total_assets_usd"`
-	TotalLiabilities float64     `json:"total_liabilities"`
-	NetWorth         float64     `json:"net_worth"`
+	Assets           []Asset        `json:"assets"`
+	Liabilities      []Liability    `json:"liabilities"`
+	TotalAssets      float64        `json:"total_assets"`
+	TotalAssetsUSD   float64        `json:"total_assets_usd"`
+	TotalLiabilities float64        `json:"total_liabilities"`
+	NetWorth         float64        `json:"net_worth"`
+	Invested         AssetCostBasis `json:"invested"`
 }
 
 type ExchangeRatesResponse struct {

@@ -85,6 +85,7 @@ func (s *Snapshot) CreateDailySnapshot(ctx context.Context, userID string) error
 		totalLiab += l.Amount
 	}
 	netWorth := totalAssets - totalLiab
+	invested := (&CostBasis{Store: s.Store}).Totals(ctx, assets)
 
 	now := time.Now().UTC()
 	today := snapshotDate(now)
@@ -116,6 +117,7 @@ func (s *Snapshot) CreateDailySnapshot(ctx context.Context, userID string) error
 		"total_assets_usd":  totalAssetsUSD,
 		"total_liabilities": totalLiab,
 		"net_worth":         netWorth,
+		"invested":          invested,
 		"assets":            assetBSON,
 		"liabilities":       liabBSON,
 	}

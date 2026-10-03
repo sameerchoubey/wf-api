@@ -56,3 +56,23 @@ func (s *Store) SetSnapshot(ctx context.Context, userID, date string, fields bso
 	_, err := s.db.Collection("snapshots").UpdateOne(ctx, filter, bson.M{"$set": fields}, options.Update().SetUpsert(true))
 	return err
 }
+
+// AllSnapshots returns every user's snapshots, oldest first.
+func (s *Store) AllSnapshots(ctx context.Context) ([]models.Snapshot, error) {
+	cur, err := s.db.Collection("snapshots").Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "date", Value: 1}}).SetProjection(bson.M{"_id": 0}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var out []models.Snapshot
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetSnapshotInvested sets only the invested summary on one snapshot.
+func (s *Store) SetSnapshotInvested(ctx context.Context, userID, date string, invested models.AssetCostBasis) error {
+	_, err := s.db.Collection("snapshots").UpdateOne(ctx, bson.M{"user_id": userID, "date": date}, bson.M{"$set": bson.M{"invested": invested}})
+	return err
+}
