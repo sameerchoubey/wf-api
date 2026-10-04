@@ -94,18 +94,36 @@ type Asset struct {
 	// Bonds (asset_type == "bonds"): invested vs current per bond,
 	// entered manually (no market feed).
 	BondHoldings []BondHolding `bson:"bond_holdings,omitempty" json:"bond_holdings,omitempty"`
-	UpdatedAt    string        `bson:"updated_at" json:"updated_at"`
+	// PurchasePrice is what a personal item cost (asset_type == "personal");
+	// when unset it is taken to equal the current value.
+	PurchasePrice *float64 `bson:"purchase_price,omitempty" json:"purchase_price,omitempty"`
+	UpdatedAt     string   `bson:"updated_at" json:"updated_at"`
 	// CostBasis is computed on read (never stored on the asset): money put
 	// in vs what that money is worth now.
 	CostBasis *AssetCostBasis `bson:"-" json:"cost_basis,omitempty"`
 }
 
 // AssetCostBasis is invested vs current for the holdings whose cost is
-// known; Untracked is the current value of everything else.
+// known; Untracked (= Rewards + NoCost) is the current value of the rest.
+// Personal items are inside Invested/Current and also broken out, so the
+// market gain can exclude their depreciation.
 type AssetCostBasis struct {
-	Invested  float64 `bson:"invested" json:"invested"`
-	Current   float64 `bson:"current" json:"current"`
-	Untracked float64 `bson:"untracked" json:"untracked"`
+	Invested         float64 `bson:"invested" json:"invested"`
+	Current          float64 `bson:"current" json:"current"`
+	Untracked        float64 `bson:"untracked" json:"untracked"`
+	PersonalInvested float64 `bson:"personal_invested" json:"personal_invested"`
+	PersonalCurrent  float64 `bson:"personal_current" json:"personal_current"`
+	// Cash is bank balances, deposits and money lent: counted at face value,
+	// so it is left out of the market-return percentage.
+	Cash float64 `bson:"cash" json:"cash"`
+	// Rewards is travel points: counted in net worth, never as invested.
+	Rewards float64 `bson:"rewards" json:"rewards"`
+	// NoCost is everything else with no known cost (e.g. a fund with no
+	// average NAV, property with no purchase price).
+	NoCost float64 `bson:"no_cost" json:"no_cost"`
+	// Estimated marks history derived from cost ratios rather than buy
+	// prices (snapshots from before structured holdings existed).
+	Estimated bool `bson:"estimated,omitempty" json:"estimated,omitempty"`
 }
 
 // BondHolding is one bond inside a bonds portfolio.
@@ -211,6 +229,7 @@ type AssetCreate struct {
 	BankHoldings         []BankHolding   `json:"bank_holdings"`
 	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
 	BondHoldings         []BondHolding   `json:"bond_holdings"`
+	PurchasePrice        *float64        `json:"purchase_price"`
 }
 
 type AssetUpdate struct {
@@ -234,6 +253,7 @@ type AssetUpdate struct {
 	BankHoldings         []BankHolding   `json:"bank_holdings"`
 	LoanHoldings         []LoanHolding   `json:"loan_holdings"`
 	BondHoldings         []BondHolding   `json:"bond_holdings"`
+	PurchasePrice        *float64        `json:"purchase_price"`
 }
 
 type Liability struct {

@@ -1,7 +1,10 @@
 // Command backfill-invested fills the invested summary on snapshots
 // written before cost tracking shipped, using the asset copies each
 // snapshot already holds. Crypto is valued with CoinGecko's historical
-// daily prices for the snapshot's date.
+// daily prices for the snapshot's date. Assets stored as a single value
+// with no holdings (older data) are estimated from each user's current
+// invested ÷ value ratio for that kind, and the snapshot is marked
+// estimated.
 //
 // Dry run by default; pass -apply to write. Pass -all to also recompute
 // snapshots that already have an invested summary.
@@ -59,7 +62,11 @@ func main() {
 		time.Sleep(2 * time.Second) // stay well under the public rate limit
 	}
 
-	var updated, skipped, missingPrice int
+	// Per-user cost ratios from today's assets, for estimating flat history.
+	ratiosByUser := map[string]map[string]float64{}
+	live := &service.CostBasis{Store: st}
+
+	var updated, skipped, missingPrice, failed int
 	for _, sn := range snaps {
 		if sn.Invested != nil && !*all {
 			skipped++
@@ -68,6 +75,7 @@ func main() {
 		assets, err := decodeAssets(sn.Assets)
 		if err != nil {
 			log.Printf("%s %s: cannot decode assets: %v", sn.UserID, sn.Date, err)
+			failed++
 			continue
 		}
 		date := sn.Date
@@ -81,9 +89,27 @@ func main() {
 				return p, ok
 			},
 		}
-		inv := cb.Totals(ctx, assets)
-		fmt.Printf("%s  user=%s  invested=%12.0f  current=%12.0f  untracked=%12.0f\n",
-			sn.Date, sn.UserID[:8], inv.Invested, inv.Current, inv.Untracked)
+		ratios, ok := ratiosByUser[sn.UserID]
+		if !ok {
+			current, err := st.ListAssetsByUser(ctx, sn.UserID)
+			if err != nil {
+				log.Fatalf("%s: list assets: %v", sn.UserID, err)
+			}
+			live.Totals(ctx, current)
+			ratios = service.Ratios(current)
+			ratiosByUser[sn.UserID] = ratios
+		}
+		cb.Totals(ctx, assets)
+		for i := range assets {
+			service.Estimate(&assets[i], ratios)
+		}
+		inv := service.Sum(assets)
+		est := ""
+		if inv.Estimated {
+			est = "  (estimated)"
+		}
+		fmt.Printf("%s  user=%s  invested=%12.0f  current=%12.0f  untracked=%12.0f%s\n",
+			sn.Date, sn.UserID[:8], inv.Invested, inv.Current, inv.Untracked, est)
 		if *apply {
 			if err := st.SetSnapshotInvested(ctx, sn.UserID, sn.Date, inv); err != nil {
 				log.Fatalf("%s %s: %v", sn.UserID, sn.Date, err)
@@ -96,8 +122,11 @@ func main() {
 	if *apply {
 		mode = "written"
 	}
-	fmt.Fprintf(os.Stderr, "\n%d snapshots %s, %d already had data (skipped), %d crypto lookups had no price for that date\n",
-		updated, mode, skipped, missingPrice)
+	fmt.Fprintf(os.Stderr, "\n%d snapshots %s, %d already had data (skipped), %d FAILED to decode, %d crypto lookups had no price for that date\n",
+		updated, mode, skipped, failed, missingPrice)
+	if failed > 0 {
+		os.Exit(1)
+	}
 }
 
 func decodeAssets(raw []interface{}) ([]models.Asset, error) {
@@ -105,6 +134,15 @@ func decodeAssets(raw []interface{}) ([]models.Asset, error) {
 	for _, r := range raw {
 		b, err := bson.Marshal(r)
 		if err != nil {
+			return nil, err
+		}
+		// Older snapshots stored updated_at as a BSON date; it isn't needed here.
+		var m bson.M
+		if err := bson.Unmarshal(b, &m); err != nil {
+			return nil, err
+		}
+		delete(m, "updated_at")
+		if b, err = bson.Marshal(m); err != nil {
 			return nil, err
 		}
 		var a models.Asset

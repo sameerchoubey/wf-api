@@ -27,6 +27,9 @@ func assetUpdateBSON(in models.AssetUpdate) bson.M {
 	if in.CurrentValue != nil {
 		m["current_value"] = *in.CurrentValue
 	}
+	if in.PurchasePrice != nil {
+		m["purchase_price"] = *in.PurchasePrice
+	}
 	if in.IsForeign != nil {
 		m["is_foreign"] = *in.IsForeign
 	}

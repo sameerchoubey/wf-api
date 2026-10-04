@@ -522,6 +522,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 		Name:                 in.Name,
 		Category:             in.Category,
 		CurrentValue:         in.CurrentValue,
+		PurchasePrice:        in.PurchasePrice,
 		IsForeign:            in.IsForeign,
 		ForeignCurrency:      in.ForeignCurrency,
 		ForeignAmount:        in.ForeignAmount,
