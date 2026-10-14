@@ -92,7 +92,7 @@ func (f *FXRevaluer) revalueLocked(ctx context.Context) error {
 		}
 		total := 0.0
 		ok := true
-		for _, b := range a.BankHoldings {
+		for i, b := range a.BankHoldings {
 			rate := 1.0
 			if b.Currency != "INR" {
 				rate = rates[b.Currency]
@@ -101,12 +101,13 @@ func (f *FXRevaluer) revalueLocked(ctx context.Context) error {
 					break
 				}
 			}
+			a.BankHoldings[i].LastRate = rate
 			total += b.Balance * rate
 		}
 		if !ok {
 			continue
 		}
-		if err := f.Store.SetAssetCurrentValue(ctx, a.ID, total); err != nil {
+		if err := f.Store.SetBankValuation(ctx, a.ID, total, a.BankHoldings); err != nil {
 			if f.Log != nil {
 				f.Log.Error("bank revalue failed", "asset", a.ID, "err", err)
 			}

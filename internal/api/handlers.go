@@ -82,13 +82,19 @@ func (h *Handler) priceBankAsset(ctx context.Context, a *models.Asset) error {
 		if b.Balance < 0 {
 			return fmt.Errorf("%s: balance cannot be negative", b.Label)
 		}
+		if b.BuyRate != nil && *b.BuyRate < 0 {
+			return fmt.Errorf("%s: buy rate cannot be negative", b.Label)
+		}
 		rate := 1.0
 		if b.Currency != "INR" {
 			rate = rates[b.Currency]
 			if rate <= 0 {
 				return fmt.Errorf("%s: no rate for %s", b.Label, b.Currency)
 			}
+		} else {
+			a.BankHoldings[i].BuyRate = nil // INR has no rate
 		}
+		a.BankHoldings[i].LastRate = rate
 		total += b.Balance * rate
 	}
 	a.CurrentValue = total

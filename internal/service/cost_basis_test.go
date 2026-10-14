@@ -38,6 +38,7 @@ func TestCostBasisSkipsHoldingsWithoutCost(t *testing.T) {
 		PersonalInvested: 1500 + 300,
 		PersonalCurrent:  900 + 300,
 		Cash:             2000,
+		CashCurrent:      2000,
 		Rewards:          700,
 		NoCost:           1500 + 50000,
 	}
@@ -67,6 +68,21 @@ func TestEstimateFlatHistory(t *testing.T) {
 	}
 	got := Sum(old)
 	if got.Invested != 500+200 || got.Current != 550+200 || got.NoCost != 300 || !got.Estimated {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestForeignCashAtBuyRate(t *testing.T) {
+	a := models.Asset{
+		AssetType:    ptr("bank_accounts"),
+		CurrentValue: 10000 + 1000*88,
+		BankHoldings: []models.BankHolding{
+			{Label: "HDFC", Currency: "INR", Balance: 10000, LastRate: 1},
+			{Label: "Travel USD", Currency: "USD", Balance: 1000, BuyRate: ptr(83.0), LastRate: 88},
+		},
+	}
+	got := (&CostBasis{}).Totals(context.Background(), []models.Asset{a})
+	if got.Cash != 10000+83000 || got.CashCurrent != 98000 || got.Invested != 93000 || got.NoCost != 0 {
 		t.Fatalf("got %+v", got)
 	}
 }

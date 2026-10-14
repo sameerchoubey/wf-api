@@ -215,6 +215,16 @@ func (s *Store) SetAssetCurrentValue(ctx context.Context, assetID string, valueI
 	return err
 }
 
+// SetBankValuation updates a bank portfolio's INR total and the per-account
+// rates stamped on its holdings; updated_at is left as the user's last edit.
+func (s *Store) SetBankValuation(ctx context.Context, assetID string, valueINR float64, holdings []models.BankHolding) error {
+	_, err := s.db.Collection("assets").UpdateOne(ctx, bson.M{"id": assetID}, bson.M{"$set": bson.M{
+		"current_value": valueINR,
+		"bank_holdings": holdings,
+	}})
+	return err
+}
+
 // SetAssetTravelValuation updates a travel-points asset's INR value fields
 // (the USD total stays; only the conversion moves with the rate).
 func (s *Store) SetAssetTravelValuation(ctx context.Context, assetID string, valueINR float64) error {

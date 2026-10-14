@@ -154,8 +154,9 @@ func (c *CostBasis) ForAsset(ctx context.Context, a *models.Asset) {
 			}
 		}
 	case kind == KindCash:
-		add(a.CurrentValue, a.CurrentValue)
-		cb.Cash = a.CurrentValue
+		invested, current := cashCost(a)
+		add(invested, current)
+		cb.Cash, cb.CashCurrent = invested, current
 	case kind == KindPersonal:
 		buy := a.CurrentValue
 		if a.PurchasePrice != nil && *a.PurchasePrice > 0 {
@@ -175,6 +176,23 @@ func (c *CostBasis) ForAsset(ctx context.Context, a *models.Asset) {
 	}
 	cb.Untracked = cb.Rewards + cb.NoCost
 	a.CostBasis = &cb
+}
+
+// cashCost is cash at face value, except foreign-currency accounts with a
+// known buy rate: those count at what the currency cost, so exchange-rate
+// moves show up as a currency change rather than as new money put in.
+func cashCost(a *models.Asset) (invested, current float64) {
+	if a.AssetType == nil || *a.AssetType != "bank_accounts" || len(a.BankHoldings) == 0 {
+		return a.CurrentValue, a.CurrentValue
+	}
+	var adjust float64
+	for _, h := range a.BankHoldings {
+		if h.Currency == "INR" || h.BuyRate == nil || *h.BuyRate <= 0 || h.LastRate <= 0 {
+			continue
+		}
+		adjust += h.Balance * (h.LastRate - *h.BuyRate)
+	}
+	return a.CurrentValue - adjust, a.CurrentValue
 }
 
 // Estimate prices a flat market asset from a cost ratio (invested ÷
@@ -231,6 +249,7 @@ func Sum(assets []models.Asset) models.AssetCostBasis {
 		t.PersonalInvested += cb.PersonalInvested
 		t.PersonalCurrent += cb.PersonalCurrent
 		t.Cash += cb.Cash
+		t.CashCurrent += cb.CashCurrent
 		t.Rewards += cb.Rewards
 		t.NoCost += cb.NoCost
 		t.Estimated = t.Estimated || cb.Estimated

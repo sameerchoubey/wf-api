@@ -116,6 +116,9 @@ type AssetCostBasis struct {
 	// Cash is bank balances, deposits and money lent: counted at face value,
 	// so it is left out of the market-return percentage.
 	Cash float64 `bson:"cash" json:"cash"`
+	// CashCurrent is cash at today's value; it differs from Cash only for
+	// foreign currency bought at a known rate (the currency change).
+	CashCurrent float64 `bson:"cash_current" json:"cash_current"`
 	// Rewards is travel points: counted in net worth, never as invested.
 	Rewards float64 `bson:"rewards" json:"rewards"`
 	// NoCost is everything else with no known cost (e.g. a fund with no
@@ -138,6 +141,10 @@ type BankHolding struct {
 	Label    string  `bson:"label" json:"label"`
 	Currency string  `bson:"currency" json:"currency"` // INR, USD or EUR
 	Balance  float64 `bson:"balance" json:"balance"`
+	// BuyRate is the ₹ paid per unit of a foreign currency (optional);
+	// LastRate is today's ₹ rate, server-maintained by FX revaluation.
+	BuyRate  *float64 `bson:"buy_rate,omitempty" json:"buy_rate,omitempty"`
+	LastRate float64  `bson:"last_rate,omitempty" json:"last_rate,omitempty"`
 }
 
 // LoanHolding is one loan inside a loans-given portfolio.
